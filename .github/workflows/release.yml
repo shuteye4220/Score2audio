@@ -13,8 +13,34 @@ permissions:
   contents: write
 
 jobs:
-  desktop:
+  # Decides the version being built, and whether to publish it as a
+  # release: for a pushed tag such as v1.0.1, or when a push to main changes
+  # the VERSION file to a version that has no release yet.
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"; echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          V=$(tr -d ' \r\n' < VERSION)
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ] && ! git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then
+            echo "version=$V" >> "$GITHUB_OUTPUT"; echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Release::Building and publishing score2audio $V"
+          else
+            echo "version=dev-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"; echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  desktop:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -30,10 +56,6 @@ jobs:
             exit 1
           }
           cat vulncheck.txt
-      - name: Work out the version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-          else echo "VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"; fi
       - name: Test and build Windows, Mac and Linux downloads
         run: make dist VERSION="$VERSION"
       - uses: actions/upload-artifact@v4
@@ -42,7 +64,11 @@ jobs:
           path: dist/*
 
   android:
+    needs: version
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      RELEASE: ${{ needs.version.outputs.release }}
     defaults:
       run:
         working-directory: android
@@ -55,11 +81,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.10.2"
-      - name: Work out the version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V="dev-${GITHUB_SHA::7}"; fi
-          echo "VERSION=$V" >> "$GITHUB_ENV"
-          echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+      - name: Work out the version code
+        run: echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Build the app
         env:
           SIGNING_STORE_BASE64: ${{ secrets.SIGNING_STORE_BASE64 }}
@@ -73,7 +96,7 @@ jobs:
             echo "$SIGNING_STORE_BASE64" | base64 -d > "$RUNNER_TEMP/signing.p12"
             export SIGNING_STORE_FILE="$RUNNER_TEMP/signing.p12"
             SIGNED=yes; echo "SIGNED=yes" >> "$GITHUB_ENV"
-          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+          elif [ "$RELEASE" = true ]; then
             echo "::error title=Android signing::The SIGNING_STORE_BASE64 and SIGNING_STORE_PASSWORD secrets are not set, so this release cannot be signed. See README.md."
             exit 1
           else
@@ -110,12 +133,17 @@ jobs:
           git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" builds
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [desktop, android]
+    if: needs.version.outputs.release == 'true'
+    needs: [version, desktop, android]
     runs-on: ubuntu-latest
+    env:
+      TAG: v${{ needs.version.outputs.version }}
     concurrency:
-      group: release-${{ github.ref_name }}
+      group: release-v${{ needs.version.outputs.version }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: release-notes
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -125,12 +153,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ls -l dist
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             # the release was made on GitHub's website: add the downloads to it
-            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
           else
             PRE=""
-            if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRE="--prerelease"; fi
-            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" $PRE \
-              --title "score2audio ${GITHUB_REF_NAME}" --generate-notes
+            if [[ "$TAG" == *-* ]]; then PRE="--prerelease"; fi
+            NOTES=""
+            if [ -f "$GITHUB_WORKSPACE/release-notes/$TAG.md" ]; then NOTES="--notes-file $GITHUB_WORKSPACE/release-notes/$TAG.md"; else NOTES="--generate-notes"; fi
+            # Creates the tag too, on the commit that was built.
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" $PRE \
+              --title "score2audio $TAG" $NOTES
           fi

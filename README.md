@@ -116,7 +116,7 @@ make install    # Linux: install into ~/.local, with a menu entry
 make dist       # build the Windows, Mac and Linux downloads into dist/
 ```
 
-The web page lives in the `web` folder and is built into the program. Pushing a tag such as `v1.0.1` to GitHub builds all three downloads automatically and attaches them to a new release.
+The web page lives in the `web` folder and is built into the program. To publish a new version, change the number in the `VERSION` file (and optionally add release notes as `release-notes/v<version>.md`) and push to `main`: GitHub then builds the Windows, Mac, Linux and Android downloads and publishes them as a new release, tagged with that version. Pushing a tag such as `v1.0.1` does the same.
 
 Settings for testing, as environment variables:
 
