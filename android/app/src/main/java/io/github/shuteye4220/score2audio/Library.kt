@@ -43,6 +43,7 @@ object Library {
 
     /** Adds a .s2a file to the library and returns its id. */
     fun import(ctx: Context, uri: Uri): String {
+        refusePrivateFile(ctx, uri)
         val name = displayName(ctx, uri)
         val lower = name.lowercase()
         if (lower.endsWith(".pdf")) {
@@ -64,6 +65,26 @@ object Library {
                 .put("added", System.currentTimeMillis()).put("sourceFile", score.sourceFile.ifBlank { name }).toString()
         )
         return id
+    }
+
+    /**
+     * Another app could ask us to "open" a file:// link that points inside
+     * this app's own private storage. Opening it would copy our private files
+     * into the library, so such links are refused. (Files shared the normal
+     * way, through content:// links, are not affected.)
+     */
+    private fun refusePrivateFile(ctx: Context, uri: Uri) {
+        if (uri.scheme != "file") return
+        val path = try {
+            File(uri.path ?: "").canonicalPath
+        } catch (e: Exception) {
+            throw ScoreFileException("The file could not be opened.")
+        }
+        val own = listOfNotNull(ctx.applicationInfo.dataDir, ctx.filesDir.parent, ctx.dataDir.path)
+            .mapNotNull { runCatching { File(it).canonicalPath }.getOrNull() }
+        if (own.any { path == it || path.startsWith(it + File.separator) }) {
+            throw ScoreFileException("The file could not be opened.")
+        }
     }
 
     private fun readScoreJson(input: InputStream): String {

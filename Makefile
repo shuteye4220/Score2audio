@@ -1,4 +1,5 @@
-# Build score2audio. Needs Go 1.22 or newer (on Arch Linux: sudo pacman -S go).
+# Build score2audio. Needs Go 1.24 or newer (on Arch Linux: sudo pacman -S go); an
+# older Go fetches the newer Go named in go.mod by itself, for its security fixes.
 #
 #   make            build for this computer
 #   make test       run the tests
@@ -9,10 +10,14 @@
 VERSION ?= $(or $(shell git describe --tags --always 2>/dev/null | sed "s/^v//"),dev)
 LDFLAGS := -s -w -X main.appVersion=$(VERSION)
 GO      ?= go
-TESSDATA_URL := https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata
+# English language data for Tesseract, pinned to a known commit and checked
+# against its SHA-256, so a changed or tampered download is never shipped.
+TESSDATA_COMMIT := ced78752cc61322fb554c280d13360b35b8684e4
+TESSDATA_SHA256 := daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047
+TESSDATA_URL := https://github.com/tesseract-ocr/tessdata/raw/$(TESSDATA_COMMIT)/eng.traineddata
 PREFIX  ?= $(HOME)/.local
 
-.PHONY: all build test run dist clean install tessdata
+.PHONY: all build test vulncheck run dist clean install tessdata
 
 all: build
 
@@ -23,12 +28,19 @@ test:
 	$(GO) vet ./...
 	$(GO) test ./...
 
+# Check the code and the Go standard library it uses for known vulnerabilities.
+vulncheck:
+	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
 run: build tessdata
 	./score2audio
 
 tessdata/eng.traineddata:
 	mkdir -p tessdata
-	curl -fsSL -o $@ $(TESSDATA_URL)
+	curl -fsSL -o $@.download $(TESSDATA_URL)
+	@if command -v sha256sum >/dev/null; then sum=$$(sha256sum $@.download); else sum=$$(shasum -a 256 $@.download); fi; \
+	  case "$$sum" in $(TESSDATA_SHA256)*) ;; *) echo "eng.traineddata does not match its expected SHA-256; not using it."; rm -f $@.download; exit 1;; esac
+	mv $@.download $@
 
 tessdata: tessdata/eng.traineddata
 

@@ -20,16 +20,20 @@ class Plan(
     val range: IntRange,
 ) {
     /** Index into perf of the measure playing at time s. */
-    fun measureAt(s: Double): Int {
-        var k = 0
-        while (k + 1 < perf.size && perf[k + 1].sec <= s) k++
-        return k
-    }
+    fun measureAt(s: Double): Int = maxOf(0, lastAtOrBefore(perf.size, s) { perf[it].sec })
 
-    fun wordAt(s: Double): Int {
-        var i = -1
-        while (i + 1 < words.size && words[i + 1].s <= s) i++
-        return i
+    fun wordAt(s: Double): Int = lastAtOrBefore(words.size, s) { words[it].s }
+
+    /** Index of the last item starting at or before s, or -1 (binary search; items are in time order). */
+    private inline fun lastAtOrBefore(size: Int, s: Double, start: (Int) -> Double): Int {
+        var lo = 0
+        var hi = size - 1
+        var found = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (start(mid) <= s) { found = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        return found
     }
 
     companion object {
@@ -83,9 +87,10 @@ class Plan(
             clicks.sortBy { it.s }
             val words = ArrayList<TimedWord>()
             score.verses.getOrNull(score.opts.verse)?.let { v ->
+                val byMeasure = v.words.groupBy { it.mi }
                 for (p in perf) {
                     val meas = ms[p.mi]
-                    for (w in v.words) if (w.mi == p.mi) words += TimedWord(p.sec + score.secBetween(meas.t, w.t), w.text)
+                    for (w in byMeasure[p.mi].orEmpty()) words += TimedWord(p.sec + score.secBetween(meas.t, w.t), w.text)
                 }
                 words.sortBy { it.s }
             }

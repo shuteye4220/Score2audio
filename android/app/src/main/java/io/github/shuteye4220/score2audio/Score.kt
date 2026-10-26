@@ -270,12 +270,30 @@ class Score(
                 throw ScoreFileException("That score file was made by a newer version of score2audio. Please update the app.")
             }
             val m = root.optJSONObject("model") ?: throw ScoreFileException("That score file does not contain any music.")
+            // Score files can come from anyone, so every number is checked
+            // before it is used: a crafted file must not be able to freeze or
+            // crash the app (for example with a tempo of zero, a note lasting
+            // a billion beats or a measure that does not exist). These are
+            // the same limits the computer program applies.
             val measures = m.getJSONArray("measures").map { o ->
-                Measure(o.getString("n"), o.getDouble("t"), o.getDouble("d"), o.optInt("beats", 4), o.optInt("beatType", 4), o.optBoolean("sys"))
-            }
+                val beats = o.optInt("beats", 4).let { if (it in 1..64) it else 4 }
+                val beatType = o.optInt("beatType", 4).let { if (it in setOf(1, 2, 4, 8, 16, 32, 64)) it else 4 }
+                Measure(o.getString("n").take(20), clampD(o.getDouble("t"), 0.0, MAX_SCORE_QN), clampD(o.getDouble("d"), 0.0, MAX_MEASURE_QN),
+                    beats, beatType, o.optBoolean("sys"))
+            }.take(MAX_MEASURES)
             if (measures.isEmpty()) throw ScoreFileException("That score file does not contain any music.")
-            val order = m.optJSONArray("order")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: measures.indices.toList()
+            val nm = measures.size
+            var orderLength = 0.0
+            val order = (m.optJSONArray("order")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: measures.indices.toList())
+                .filter { it in 0 until nm }
+                .takeWhile { orderLength += measures[it].d; orderLength <= MAX_PERFORMANCE_QN }
+                .take(MAX_MEASURES)
+                .ifEmpty { measures.indices.toList() }
             var tempo = m.optJSONArray("tempo")?.map { TempoPoint(it.getDouble("t"), it.getDouble("bpm")) }.orEmpty()
+                .filter { it.t.isFinite() && it.t >= 0 && it.bpm.isFinite() && it.bpm > 0 }
+                .map { TempoPoint(minOf(it.t, MAX_SCORE_QN), it.bpm.coerceIn(MIN_BPM, MAX_BPM)) }
+                .sortedBy { it.t }
+                .take(MAX_TEMPO_POINTS)
             if (tempo.isEmpty() || tempo[0].t > 0) tempo = listOf(TempoPoint(0.0, tempo.firstOrNull()?.bpm ?: 90.0)) + tempo
             val lines = m.optJSONArray("lines")?.map { o ->
                 Line(
@@ -286,19 +304,24 @@ class Score(
                     transpose = o.optInt("transpose", 0), transposeNote = o.optString("transposeNote"),
                     events = o.optJSONArray("events")?.map { e ->
                         NoteEvent(e.getDouble("t"), e.getDouble("d"), e.getInt("m"), e.getInt("mi"),
-                            e.optString("name"), e.optString("dur"), e.optString("ly"))
-                    }.orEmpty(),
+                            e.optString("name").take(40), e.optString("dur").take(80), e.optString("ly").take(200))
+                    }.orEmpty()
+                        .filter { it.m in 0..127 && it.mi in 0 until nm && it.t.isFinite() && it.t >= 0 && it.d.isFinite() }
+                        .map { NoteEvent(minOf(it.t, MAX_SCORE_QN), it.d.coerceIn(0.0, MAX_MEASURE_QN), it.m, it.mi, it.name, it.dur, it.lyric) }
+                        .take(MAX_EVENTS_PER_LINE),
                 )
-            }.orEmpty()
+            }.orEmpty().take(MAX_LINES)
             val verses = m.optJSONArray("verses")?.map { v ->
                 Verse(
-                    v.optString("name", "Lyrics"),
-                    v.optJSONArray("words")?.map { Word(it.getDouble("t"), it.getInt("mi"), it.getString("text")) }.orEmpty(),
-                    v.optJSONArray("lines")?.map { LyricLine(it.getInt("from"), it.getInt("to"), it.getString("text")) }.orEmpty(),
+                    v.optString("name", "Lyrics").take(200),
+                    v.optJSONArray("words")?.map { Word(it.getDouble("t"), it.getInt("mi"), it.getString("text").take(200)) }.orEmpty()
+                        .filter { it.t.isFinite() && it.t >= 0 && it.mi in 0 until nm },
+                    v.optJSONArray("lines")?.map { LyricLine(it.getInt("from"), it.getInt("to"), it.getString("text").take(5000)) }.orEmpty()
+                        .filter { it.from in 0 until nm && it.to in it.from until nm },
                 )
-            }.orEmpty()
-            val warnings = m.optJSONArray("warnings")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty()
-            val title = root.optString("title").ifBlank { m.optString("title", "Score") }
+            }.orEmpty().take(64)
+            val warnings = m.optJSONArray("warnings")?.let { a -> (0 until a.length()).map { a.getString(it).take(1000) } }.orEmpty().take(50)
+            val title = root.optString("title").ifBlank { m.optString("title", "Score") }.take(200)
             val score = Score(id, title, root.optString("sourceFile"), measures, order, m.optBoolean("hasRepeats"),
                 tempo, m.optBoolean("tempoFromScore"), lines, verses, warnings)
             score.applyPrefs(root.optJSONObject("prefs"))
@@ -308,5 +331,18 @@ class Score(
 }
 
 class ScoreFileException(message: String) : Exception(message)
+
+// Limits on what a score file may contain (the same as in the computer program).
+private const val MAX_MEASURES = 20000
+private const val MAX_MEASURE_QN = 256.0
+private const val MAX_SCORE_QN = 1e6
+private const val MAX_PERFORMANCE_QN = 200000.0
+private const val MAX_LINES = 256
+private const val MAX_EVENTS_PER_LINE = 200000
+private const val MAX_TEMPO_POINTS = 10000
+private const val MIN_BPM = 10.0
+private const val MAX_BPM = 600.0
+
+private fun clampD(v: Double, lo: Double, hi: Double): Double = if (v.isFinite()) v.coerceIn(lo, hi) else lo
 
 private fun <T> JSONArray.map(f: (JSONObject) -> T): List<T> = (0 until length()).map { f(getJSONObject(it)) }

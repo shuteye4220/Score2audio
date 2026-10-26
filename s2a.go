@@ -28,6 +28,11 @@ import (
 const (
 	s2aFormat        = "score2audio-score"
 	s2aFormatVersion = 1
+
+	// Limits on unpacking a score file, so a crafted one cannot exhaust memory.
+	maxS2AEntryBytes = 100 << 20 // score.json, or one MusicXML file
+	maxS2ATotalBytes = 300 << 20 // everything unpacked together
+	maxS2AMusicFiles = 64
 )
 
 type S2AFile struct {
@@ -52,7 +57,7 @@ func storedModel(meta *ScoreMeta) (*Model, error) {
 	if err == nil {
 		err = json.Unmarshal(b, &m)
 	}
-	if err == nil && m.Version == modelVersion {
+	if err == nil && m.Version == modelVersion && sanitizeModel(&m) == nil {
 		return &m, nil
 	}
 	return buildAndStore(meta, scoreMusicXML(dir))
@@ -68,8 +73,13 @@ func scoreMusicXML(dir string) []string {
 	return files
 }
 
+var (
+	unsafeFileCharsRe = regexp.MustCompile(`[\\/:*?"<>|\x00-\x1f]+`)
+	nonASCIIRe        = regexp.MustCompile(`[^\x20-\x7e]`)
+)
+
 func safeFileName(title string) string {
-	s := regexp.MustCompile(`[\\/:*?"<>|\x00-\x1f]+`).ReplaceAllString(title, " ")
+	s := unsafeFileCharsRe.ReplaceAllString(title, " ")
 	s = strings.Join(strings.Fields(s), " ")
 	if s == "" {
 		s = "score"
@@ -121,7 +131,7 @@ func exportS2A(w http.ResponseWriter, meta *ScoreMeta) {
 		return
 	}
 	name := safeFileName(meta.Title) + ".s2a"
-	ascii := regexp.MustCompile(`[^\x20-\x7e]`).ReplaceAllString(name, "_")
+	ascii := nonASCIIRe.ReplaceAllString(name, "_")
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, strings.ReplaceAll(ascii, `"`, ""), url.PathEscape(name)))
 	w.Write(buf.Bytes())
@@ -141,26 +151,27 @@ func importS2A(w http.ResponseWriter, r *http.Request, uploadName string) {
 	id := newID()
 	dir := scoreDir(id)
 	omr := filepath.Join(dir, "omr")
-	os.MkdirAll(omr, 0o755)
+	os.MkdirAll(omr, 0o700)
 	var stored []string
 	for i, x := range files {
 		p := filepath.Join(omr, fmt.Sprintf("score%02d%s", i+1, x.ext))
-		if err := os.WriteFile(p, x.data, 0o644); err == nil {
+		if err := os.WriteFile(p, x.data, 0o600); err == nil {
 			stored = append(stored, p)
 		}
 	}
-	title := strings.TrimSpace(f.Title)
+	title := cut(strings.TrimSpace(f.Title), maxShortText)
 	if title == "" {
 		title = strings.TrimSuffix(uploadName, filepath.Ext(uploadName))
 	}
-	src := f.SourceFile
-	if src == "" {
+	src := cut(filepath.Base(strings.ReplaceAll(f.SourceFile, `\`, "/")), maxShortText)
+	if src == "" || src == "." || src == "/" {
 		src = uploadName
 	}
 	meta := &ScoreMeta{ID: id, Title: title, FileName: src, Kind: "import", Created: time.Now(), SkippedPages: f.SkippedPages}
-	if f.Model != nil && f.Model.Version == modelVersion {
+	if f.Model != nil && f.Model.Version == modelVersion && sanitizeModel(f.Model) == nil {
+		f.Model.Title = cut(f.Model.Title, maxShortText)
 		b, _ := json.Marshal(f.Model)
-		os.WriteFile(filepath.Join(dir, "model.json"), b, 0o644)
+		os.WriteFile(filepath.Join(dir, "model.json"), b, 0o600)
 		meta.Ready, meta.Measures = true, len(f.Model.Measures)
 		writeMeta(meta)
 	} else if len(stored) > 0 {
@@ -175,8 +186,8 @@ func importS2A(w http.ResponseWriter, r *http.Request, uploadName string) {
 		httpErr(w, 400, "That score file does not contain any music.")
 		return
 	}
-	if len(f.Prefs) > 0 && json.Valid(f.Prefs) && string(f.Prefs) != "null" {
-		os.WriteFile(filepath.Join(dir, "prefs.json"), f.Prefs, 0o644)
+	if len(f.Prefs) > 0 && len(f.Prefs) < 1<<20 && json.Valid(f.Prefs) && string(f.Prefs) != "null" {
+		os.WriteFile(filepath.Join(dir, "prefs.json"), f.Prefs, 0o600)
 	}
 	writeJSON(w, map[string]string{"scoreId": id})
 }
@@ -194,9 +205,11 @@ func readS2A(data []byte) (*S2AFile, []s2aMusic, error) {
 	}
 	var f *S2AFile
 	var music []s2aMusic
+	var unpacked int64
+	tooLarge := fmt.Errorf("That score file is too large.")
 	for _, zf := range zr.File {
-		if zf.UncompressedSize64 > 100<<20 {
-			return nil, nil, fmt.Errorf("That score file is too large.")
+		if zf.UncompressedSize64 > maxS2AEntryBytes {
+			return nil, nil, tooLarge
 		}
 		name := path.Clean(strings.ReplaceAll(zf.Name, `\`, "/"))
 		read := func() ([]byte, error) {
@@ -205,11 +218,24 @@ func readS2A(data []byte) (*S2AFile, []s2aMusic, error) {
 				return nil, err
 			}
 			defer rc.Close()
-			return io.ReadAll(io.LimitReader(rc, 100<<20))
+			// The size in a zip's directory can lie, so count what is
+			// actually unpacked.
+			b, err := io.ReadAll(io.LimitReader(rc, maxS2AEntryBytes+1))
+			if err != nil {
+				return nil, err
+			}
+			unpacked += int64(len(b))
+			if int64(len(b)) > maxS2AEntryBytes || unpacked > maxS2ATotalBytes {
+				return nil, tooLarge
+			}
+			return b, nil
 		}
 		switch {
 		case name == "score.json":
 			b, err := read()
+			if err == tooLarge {
+				return nil, nil, err
+			}
 			if err != nil {
 				return nil, nil, fmt.Errorf("That score file is damaged.")
 			}
@@ -226,7 +252,13 @@ func readS2A(data []byte) (*S2AFile, []s2aMusic, error) {
 			if ext != ".mxl" && ext != ".musicxml" && ext != ".xml" {
 				continue
 			}
+			if len(music) >= maxS2AMusicFiles {
+				return nil, nil, tooLarge
+			}
 			b, err := read()
+			if err == tooLarge {
+				return nil, nil, err
+			}
 			if err == nil {
 				music = append(music, s2aMusic{ext: ext, data: b})
 			}

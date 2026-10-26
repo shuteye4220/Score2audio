@@ -103,11 +103,12 @@ If you already have a score as MusicXML (a `.mxl`, `.musicxml` or `.xml` file, f
 
 The Android app is in the `android` folder; build it with Gradle 8.10 or Android Studio (`gradle assembleRelease`). It is signed with the project's own key, `android/score2audio.p12`, so each build can update the last; to use a private key instead, set the repository secrets `SIGNING_STORE_BASE64`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS` and `SIGNING_KEY_PASSWORD`.
 
-For the desktop program you need Go 1.22 or newer (on Arch Linux: `sudo pacman -S go`; on a Mac with Homebrew: `brew install go`) and, for `make dist`, `curl` and `zip`.
+For the desktop program you need Go 1.24 or newer (on Arch Linux: `sudo pacman -S go`; on a Mac with Homebrew: `brew install go`) and, for `make dist`, `curl` and `zip`. The downloads are built with Go 1.27, whose standard library has security fixes that older versions of Go lack; if your Go is older, it fetches Go 1.27 by itself the first time you build.
 
 ```
 make            # build for this computer
 make test       # run the tests
+make vulncheck  # check the code and Go for known security vulnerabilities
 make run        # build and start it
 make install    # Linux: install into ~/.local, with a menu entry
 make dist       # build the Windows, Mac and Linux downloads into dist/
@@ -123,6 +124,16 @@ Settings for testing, as environment variables:
 - `SCORE2AUDIO_NO_BROWSER` – do not open a browser.
 
 `score2audio --dump file.mxl` prints what the program understood from a MusicXML file.
+
+## Security
+
+score2audio works entirely on your computer and never sends your scores anywhere. Its page is served by score2audio itself, only to your own computer, on a different port each time, and every request must carry a secret that changes each time score2audio starts, so other web pages and other programs cannot use it. Your score library is kept where only your user account can read it.
+
+Score files (`.s2a`), MusicXML files and PDFs can come from anyone, so score2audio checks everything it reads from them: compressed files may not unpack to more than a set size, and the music in a score file is checked (for example for a tempo of zero, impossibly long notes, or measures that do not exist) before it is stored or played, on the computer and on Android.
+
+Every change to the project is checked automatically: the tests run, `govulncheck` looks for known vulnerabilities in the code and in Go, and the downloads are built with the newest Go 1.27. The English language data for reading lyrics is downloaded from a fixed version and checked against its fingerprint (SHA-256) before it is packaged.
+
+To report a security problem, please open an issue on GitHub (or, for anything sensitive, contact the maintainer privately through GitHub).
 
 ## How it works
 

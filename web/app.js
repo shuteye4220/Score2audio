@@ -146,9 +146,14 @@
     const words = [];
     const verse = M.verses[verseIdx];
     if (verse) {
+      const byM = new Map();
+      for (const w of verse.words) {
+        if (!byM.has(w.mi)) byM.set(w.mi, []);
+        byM.get(w.mi).push(w);
+      }
       for (const p of perf) {
         const meas = M.measures[p.mi];
-        for (const w of verse.words) if (w.mi === p.mi) words.push({ s: p.sec + secBetween(meas.t, w.t), text: w.text });
+        for (const w of (byM.get(p.mi) || [])) words.push({ s: p.sec + secBetween(meas.t, w.t), text: w.text });
       }
       words.sort((a, b) => a.s - b.s);
     }
@@ -235,8 +240,13 @@
     // returns {k, frac} of the current spot in the plan
     const now = P.ctx.currentTime - P.t0;
     const perf = P.plan.perf;
-    let k = 0;
-    while (k + 1 < perf.length && perf[k + 1].sec <= now) k++;
+    // last measure that has started (binary search: perf is in time order)
+    let lo = 0, hi = perf.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (perf[mid].sec <= now) lo = mid; else hi = mid - 1;
+    }
+    const k = lo;
     const frac = perf[k].dur > 0 ? Math.max(0, Math.min(1, (now - perf[k].sec) / perf[k].dur)) : 0;
     return { k, frac, now };
   }
@@ -267,12 +277,18 @@
   }
 
   function markCurrent(mi) {
-    for (const li of document.querySelectorAll('#lyrics li[data-from]')) {
-      const cur = mi >= +li.dataset.from && mi <= +li.dataset.to;
-      if (cur) li.setAttribute('aria-current', 'true'); else li.removeAttribute('aria-current');
+    // Only touch the rows whose state changes, rather than every lyric line
+    // and every row of the notes table on each new measure.
+    for (const el of document.querySelectorAll('#lyrics li[aria-current], #notes-wrap tr[aria-current]')) {
+      const cur = el.tagName === 'LI' ? (mi >= +el.dataset.from && mi <= +el.dataset.to) : +el.dataset.mi === mi;
+      if (!cur) el.removeAttribute('aria-current');
     }
-    for (const tr of document.querySelectorAll('#notes-wrap tr[data-mi]')) {
-      if (+tr.dataset.mi === mi) tr.setAttribute('aria-current', 'true'); else tr.removeAttribute('aria-current');
+    if (mi < 0) return;
+    for (const li of document.querySelectorAll('#lyrics li[data-from]')) {
+      if (mi >= +li.dataset.from && mi <= +li.dataset.to) li.setAttribute('aria-current', 'true');
+    }
+    for (const tr of document.querySelectorAll(`#notes-wrap tr[data-mi="${mi}"]`)) {
+      tr.setAttribute('aria-current', 'true');
     }
   }
 

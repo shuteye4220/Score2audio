@@ -56,3 +56,15 @@ May be `null`. When present:
 
 - `opts` – `tempo` (beats per minute; a beat is the time signature's beat), `from` and `to` (printed measure numbers), `loop`, `countIn`, `metronome`, `repeats`, `sayMeasures`, `sayLyrics`, `verse` (index), `notesLine` (line id).
 - `lines` – by line id: `enabled`, `volume` (0–100; played as (volume/100)²), `sound` (`piano`, `organ`, `flute` or `reed`), `shift` (semitones added to every note), `label` (the user's own name for the line, or empty).
+
+## Limits
+
+Score files can come from anyone, so programs reading them should treat every value as untrusted. score2audio (on the computer and on Android) applies these limits; values outside them are corrected or the entry is left out:
+
+- The zip may unpack to at most 300 MB in total, 100 MB per entry, and hold at most 64 MusicXML files. A compressed MusicXML (`.mxl`) may unpack to at most 64 MB.
+- At most 20,000 measures, and 20,000 entries in `order`, whose measures may add up to at most 200,000 quarter notes. `order` entries must be valid measure indexes.
+- Measure lengths (`d`) and note lengths are limited to 256 quarter notes, and all times to 1,000,000 quarter notes; none may be negative, and all must be ordinary finite numbers.
+- `beats` must be from 1 to 64 and `beatType` one of 1, 2, 4, 8, 16, 32 or 64 (otherwise 4/4 is assumed).
+- Tempos must be above zero and are limited to 10–600 beats per minute; at most 10,000 tempo changes.
+- At most 256 lines of 200,000 notes each; `m` must be 0–127 and `mi` a valid measure index.
+- Lyric words and lines must refer to valid measures. Long texts are shortened.

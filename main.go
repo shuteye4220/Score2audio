@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -87,7 +88,10 @@ func main() {
 	if v := os.Getenv("SCORE2AUDIO_DATA"); v != "" {
 		dataDir = v
 	}
-	os.MkdirAll(filepath.Join(dataDir, "scores"), 0o755)
+	// The score library is private to this user (a shared computer's other
+	// users cannot read it). Older versions made it readable by everyone.
+	os.MkdirAll(filepath.Join(dataDir, "scores"), 0o700)
+	os.Chmod(dataDir, 0o700)
 
 	b := make([]byte, 16)
 	rand.Read(b)
@@ -113,7 +117,7 @@ func main() {
 	mux.Handle("/", noCache(static))
 	mux.HandleFunc("/api/", apiHandler)
 
-	srv := &http.Server{Handler: hostGuard(host, mux)}
+	srv := &http.Server{Handler: hostGuard(host, mux), ReadHeaderTimeout: 30 * time.Second}
 	fmt.Println("score2audio", appVersion, "is running.")
 	fmt.Println("Your web browser should open by itself. If it does not, open this address:")
 	fmt.Println(url)
@@ -150,7 +154,7 @@ func hostGuard(host string, h http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") && r.Header.Get("X-Token") != token {
+		if strings.HasPrefix(r.URL.Path, "/api/") && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Token")), []byte(token)) != 1 {
 			http.Error(w, "This page is out of date. Please close it and start score2audio again.", http.StatusForbidden)
 			return
 		}
@@ -190,7 +194,7 @@ func saveSettings(s Settings) error {
 	settingMu.Lock()
 	defer settingMu.Unlock()
 	b, _ := json.MarshalIndent(s, "", "  ")
-	return os.WriteFile(filepath.Join(dataDir, "settings.json"), b, 0o644)
+	return os.WriteFile(filepath.Join(dataDir, "settings.json"), b, 0o600)
 }
 
 func isFile(p string) bool {
@@ -290,7 +294,11 @@ func httpErr(w http.ResponseWriter, code int, msg string) {
 	http.Error(w, msg, code)
 }
 
-var idRe = regexp.MustCompile(`^[a-z0-9]{8,40}$`)
+var (
+	idRe         = regexp.MustCompile(`^[a-z0-9]{8,40}$`)
+	underscoreRe = regexp.MustCompile(`[_]+`)
+	unsafeNameRe = regexp.MustCompile(`[^\w\- ]+`)
+)
 
 func newID() string {
 	b := make([]byte, 6)
@@ -375,7 +383,7 @@ func readMeta(id string) (*ScoreMeta, error) {
 
 func writeMeta(m *ScoreMeta) error {
 	b, _ := json.MarshalIndent(m, "", "  ")
-	return os.WriteFile(filepath.Join(scoreDir(m.ID), "meta.json"), b, 0o644)
+	return os.WriteFile(filepath.Join(scoreDir(m.ID), "meta.json"), b, 0o600)
 }
 
 func listScores() []ScoreMeta {
@@ -408,7 +416,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	id := newID()
 	dir := scoreDir(id)
-	os.MkdirAll(dir, 0o755)
+	os.MkdirAll(dir, 0o700)
 	src := filepath.Join(dir, "source"+ext)
 	f, err := os.Create(src)
 	if err != nil {
@@ -423,7 +431,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	title := strings.TrimSuffix(name, filepath.Ext(name))
-	title = strings.TrimSpace(regexp.MustCompile(`[_]+`).ReplaceAllString(title, " "))
+	title = strings.TrimSpace(underscoreRe.ReplaceAllString(title, " "))
 	meta := &ScoreMeta{ID: id, Title: title, FileName: name, Kind: kind, Created: time.Now()}
 	writeMeta(meta)
 
@@ -469,7 +477,7 @@ func buildAndStore(meta *ScoreMeta, files []string) (*Model, error) {
 	meta.Ready = true
 	meta.Measures = len(m.Measures)
 	b, _ := json.Marshal(m)
-	if err := os.WriteFile(filepath.Join(scoreDir(meta.ID), "model.json"), b, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(scoreDir(meta.ID), "model.json"), b, 0o600); err != nil {
 		return nil, err
 	}
 	return m, writeMeta(meta)
@@ -482,6 +490,13 @@ func startOMR(meta *ScoreMeta) (*Job, error) {
 	}
 	job := &Job{ID: newID(), ScoreID: meta.ID, State: "running", Message: "Starting the music reader", Started: time.Now()}
 	jobsMu.Lock()
+	// Forget finished jobs older than an hour; the page only asks about
+	// the one it is waiting for.
+	for id, j := range jobs {
+		if j.State != "running" && time.Since(j.Started) > time.Hour {
+			delete(jobs, id)
+		}
+	}
 	jobs[job.ID] = job
 	jobsMu.Unlock()
 	go runOMR(job, meta, aud)
@@ -601,7 +616,7 @@ func runOMR(job *Job, meta *ScoreMeta, aud string) {
 	dir := scoreDir(meta.ID)
 	out := filepath.Join(dir, "omr")
 	os.RemoveAll(out)
-	os.MkdirAll(out, 0o755)
+	os.MkdirAll(out, 0o700)
 	src := filepath.Join(dir, "source.pdf")
 	set := func(fn func(j *Job)) {
 		jobsMu.Lock()
@@ -642,7 +657,7 @@ func runOMR(job *Job, meta *ScoreMeta, aud string) {
 	lineCount := len(job.LogLines)
 	details := importantLines(job.LogLines)
 	jobsMu.Unlock()
-	os.WriteFile(logPath, []byte(logText), 0o644)
+	os.WriteFile(logPath, []byte(logText), 0o600)
 	if len(files) == 0 {
 		msg := "Audiveris could not read music from this PDF."
 		if err != nil {
@@ -734,7 +749,7 @@ func handleScore(w http.ResponseWriter, r *http.Request, id string, rest []strin
 			httpErr(w, 400, "Could not save your settings for this score.")
 			return
 		}
-		os.WriteFile(filepath.Join(dir, "prefs.json"), b, 0o644)
+		os.WriteFile(filepath.Join(dir, "prefs.json"), b, 0o600)
 		writeJSON(w, map[string]bool{"ok": true})
 	case action == "rename" && r.Method == http.MethodPost:
 		var body struct {
@@ -771,7 +786,7 @@ func handleScore(w http.ResponseWriter, r *http.Request, id string, rest []strin
 			httpErr(w, 404, "No MusicXML is stored for this score.")
 			return
 		}
-		safe := regexp.MustCompile(`[^\w\- ]+`).ReplaceAllString(meta.Title, "")
+		safe := unsafeNameRe.ReplaceAllString(meta.Title, "")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s%s"`, safe, filepath.Ext(files[0])))
 		http.ServeFile(w, r, files[0])
 	case action == "export" && r.Method == http.MethodGet:

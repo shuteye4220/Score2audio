@@ -270,6 +270,36 @@ type Model struct {
 
 // ---------- loading ----------
 
+// Limits on what a compressed MusicXML (.mxl) file may unpack to. Without
+// them a tiny crafted file (a "zip bomb") could expand to many gigabytes
+// and exhaust the computer's memory.
+const (
+	maxMusicXMLBytes  = 64 << 20 // the music itself
+	maxContainerBytes = 1 << 20  // META-INF/container.xml
+)
+
+var errMusicXMLTooLarge = errors.New("the MusicXML file is too large")
+
+// readLimited reads a zip entry, refusing to unpack more than limit bytes.
+func readLimited(f *zip.File, limit int64) ([]byte, error) {
+	if f.UncompressedSize64 > uint64(limit) {
+		return nil, errMusicXMLTooLarge
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	b, err := io.ReadAll(io.LimitReader(rc, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, errMusicXMLTooLarge
+	}
+	return b, nil
+}
+
 func readMusicXMLBytes(p string) ([]byte, error) {
 	data, err := os.ReadFile(p)
 	if err != nil {
@@ -283,9 +313,7 @@ func readMusicXMLBytes(p string) ([]byte, error) {
 		root := ""
 		for _, f := range zr.File {
 			if f.Name == "META-INF/container.xml" {
-				rc, _ := f.Open()
-				b, _ := io.ReadAll(rc)
-				rc.Close()
+				b, _ := readLimited(f, maxContainerBytes)
 				var c struct {
 					Rootfiles []struct {
 						Path string `xml:"full-path,attr"`
@@ -299,15 +327,13 @@ func readMusicXMLBytes(p string) ([]byte, error) {
 		for _, f := range zr.File {
 			if (root != "" && f.Name == root) ||
 				(root == "" && !strings.HasPrefix(f.Name, "META-INF") && strings.HasSuffix(strings.ToLower(f.Name), "xml")) {
-				rc, err := f.Open()
-				if err != nil {
-					return nil, err
-				}
-				defer rc.Close()
-				return io.ReadAll(rc)
+				return readLimited(f, maxMusicXMLBytes)
 			}
 		}
 		return nil, errors.New("no music found inside the compressed MusicXML file")
+	}
+	if len(data) > maxMusicXMLBytes {
+		return nil, errMusicXMLTooLarge
 	}
 	return data, nil
 }
@@ -358,6 +384,9 @@ func LoadModel(files []string, fallbackTitle string) (*Model, error) {
 	mergeSplitParts(main)
 	m := buildModel(main, fallbackTitle)
 	m.Warnings = append(append([]string{}, warnings...), m.Warnings...)
+	if err := sanitizeModel(m); err != nil {
+		return nil, err
+	}
 	return m, nil
 }
 
@@ -1347,6 +1376,8 @@ func performanceOrder(f []measureFacts) ([]int, bool) {
 }
 
 // mxlFiles returns the MusicXML files Audiveris wrote, in movement order.
+var movementRe = regexp.MustCompile(`\.mvt(\d+)\.`)
+
 func mxlFiles(dir string) []string {
 	entries, _ := os.ReadDir(dir)
 	var out []string
@@ -1356,7 +1387,7 @@ func mxlFiles(dir string) []string {
 			out = append(out, filepath.Join(dir, e.Name()))
 		}
 	}
-	mvt := regexp.MustCompile(`\.mvt(\d+)\.`)
+	mvt := movementRe
 	sort.Slice(out, func(a, b int) bool {
 		ma, mb := mvt.FindStringSubmatch(out[a]), mvt.FindStringSubmatch(out[b])
 		if ma != nil && mb != nil {
