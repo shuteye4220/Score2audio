@@ -496,11 +496,7 @@ var failedSheetRe = regexp.MustCompile(`\[[^\]#]*#(\d+)\].*(Error processing stu
 func runAudiveris(job *Job, aud, dir string, args []string, set func(func(j *Job))) error {
 	cmd := exec.Command(aud, args...)
 	cmd.Dir = dir
-	env := os.Environ()
-	if td := tessdataDir(); td != "" {
-		env = append(env, "TESSDATA_PREFIX="+td)
-	}
-	cmd.Env = env
+	cmd.Env = audiverisEnv(os.Environ(), tessdataDir())
 	hideWindow(cmd)
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
@@ -553,6 +549,40 @@ func runAudiveris(job *Job, aud, dir string, args []string, set func(func(j *Job
 	pw.Close()
 	<-scanned
 	return err
+}
+
+// audiverisEnv prepares the environment Audiveris runs in.
+//
+// Java is told to run without a screen ("headless"). Audiveris needs no
+// window when score2audio drives it, and with a screen Java tries to load
+// any assistive technology named in the user's .accessibility.properties.
+// Screen reader users on Windows usually have the Java Access Bridge
+// switched on there, which the Java bundled with Audiveris cannot load, so
+// Audiveris would stop with "Assistive Technology not found".
+func audiverisEnv(base []string, tessdata string) []string {
+	var env []string
+	toolOpts := ""
+	for _, kv := range base {
+		k := kv
+		if i := strings.IndexByte(kv, '='); i >= 0 {
+			k = kv[:i]
+		}
+		switch strings.ToUpper(k) {
+		case "JAVA_TOOL_OPTIONS":
+			toolOpts = kv[len(k)+1:]
+			continue
+		case "TESSDATA_PREFIX":
+			if tessdata != "" {
+				continue
+			}
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "JAVA_TOOL_OPTIONS="+strings.TrimSpace(toolOpts+" -Djava.awt.headless=true"))
+	if tessdata != "" {
+		env = append(env, "TESSDATA_PREFIX="+tessdata)
+	}
+	return env
 }
 
 func appendUnique(list []int, v int) []int {
