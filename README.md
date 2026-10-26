@@ -55,6 +55,8 @@ If score2audio cannot find Audiveris, the Setup section of the page explains wha
 
 The score2audio app plays scores on an Android phone or braille notetaker (Android 10 or newer). It does not read PDFs itself: read the PDF with score2audio on a computer, choose "Export for mobile", and copy the `.s2a` file to the device.
 
+If you installed a test version of the app from before version 1.0.0, uninstall it first: those were signed with a different key, so Android will not install the new version over them. Uninstalling removes the scores stored in the app, so add your `.s2a` files again afterwards.
+
 1. Download `score2audio-android.apk` from the Releases page onto the device, or copy it there.
 2. Open it from your file manager. Android will ask you to allow that file manager to install apps; allow it, then go back and install.
 3. Open score2audio, choose "Add a score file", and pick the `.s2a` file. You can also open `.s2a` files straight from a file manager.
@@ -101,7 +103,7 @@ If you already have a score as MusicXML (a `.mxl`, `.musicxml` or `.xml` file, f
 
 ## Building from source
 
-The Android app is in the `android` folder; build it with Gradle 8.10 or Android Studio (`gradle assembleRelease`). It is signed with the project's own key, `android/score2audio.p12`, so each build can update the last; to use a private key instead, set the repository secrets `SIGNING_STORE_BASE64`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS` and `SIGNING_KEY_PASSWORD`.
+The Android app is in the `android` folder; build it with Gradle 8.10 or Android Studio (`gradle assembleRelease`). A build on your own computer is signed with Android's debug key. Published builds are signed on GitHub with the project's private key, which is kept in two repository secrets and never in the repository: `SIGNING_STORE_BASE64` (the PKCS12 key store, base64-encoded) and `SIGNING_STORE_PASSWORD` (its password; the key's alias is `score2audio` and its password is the same, unless `SIGNING_KEY_ALIAS` and `SIGNING_KEY_PASSWORD` say otherwise). GitHub refuses to publish a release without them, and checks that the app was signed with the key whose SHA-256 fingerprint is `81d60d76fccc52cbfc9b33f1d17aef664c16d013e1bb45c20a4897565d9bfaac`. Keep a safe copy of the key store and its password: if they are lost, the app can never be updated in place again.
 
 For the desktop program you need Go 1.24 or newer (on Arch Linux: `sudo pacman -S go`; on a Mac with Homebrew: `brew install go`) and, for `make dist`, `curl` and `zip`. The downloads are built with Go 1.27, whose standard library has security fixes that older versions of Go lack; if your Go is older, it fetches Go 1.27 by itself the first time you build.
 

@@ -21,25 +21,26 @@ android {
 
     signingConfigs {
         create("release") {
-            // A private key can be supplied through environment variables
-            // (GitHub secrets); otherwise the project's own key is used, so
-            // every build can update the previous one.
-            val envStore = System.getenv("SIGNING_STORE_FILE")
-            storeFile = if (envStore != null) file(envStore) else rootProject.file("score2audio.p12")
-            storePassword = System.getenv("SIGNING_STORE_PASSWORD") ?: "score2audio"
-            keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "score2audio"
-            keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: "score2audio"
-            storeType = "pkcs12"
+            // Published builds are signed with the project's private key,
+            // which GitHub supplies from the repository secrets (see
+            // README.md). It is never kept in the repository.
+            System.getenv("SIGNING_STORE_FILE")?.let { store ->
+                storeFile = file(store)
+                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
+                keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "score2audio"
+                keyPassword = System.getenv("SIGNING_KEY_PASSWORD") ?: storePassword
+                storeType = "pkcs12"
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
-        }
-        debug {
-            signingConfig = signingConfigs.getByName("release")
+            // Without the private key (a build on your own computer), use
+            // Android's debug key so the app can still be built and tried.
+            signingConfig = if (System.getenv("SIGNING_STORE_FILE") != null) signingConfigs.getByName("release")
+                else signingConfigs.getByName("debug")
         }
     }
 
