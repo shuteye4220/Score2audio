@@ -4,24 +4,24 @@ on:
   push:
     branches: [audit-govulncheck]
 jobs:
-  scan:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        go: ["1.24", "1.27"]
+  scan-go124:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
-      - name: govulncheck
+          go-version: "1.27"
+          cache: false
+      - run: go install golang.org/x/vuln/cmd/govulncheck@latest && cp "$(go env GOPATH)/bin/govulncheck" "$RUNNER_TEMP/"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: govulncheck with the Go 1.24 standard library
         env:
           GOTOOLCHAIN: local
         run: |
           go version
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          if ! "$(go env GOPATH)/bin/govulncheck" -show verbose ./... > out.txt 2>&1; then status=fail; fi
+          "$RUNNER_TEMP/govulncheck" ./... > out.txt 2>&1 || true
           cat out.txt
-          grep -E "^(Vulnerability #|  [A-Za-z]|    Found in|    Fixed in|    Example traces)" out.txt | head -60 | while IFS= read -r l; do echo "::warning title=go ${{ matrix.go }}::$l"; done
-          grep -E "^Your code is affected by|^No vulnerabilities found|^=== Symbol Results|vulnerabilit" out.txt | head -5 | while IFS= read -r l; do echo "::notice title=go ${{ matrix.go }} summary::$l"; done
+          grep -E "^Vulnerability #|^    [A-Za-z]|Found in:|Fixed in:|^Your code|^No vulnerabilities|more vulnerabilit" out.txt | head -80 | while IFS= read -r l; do echo "::warning title=go1.24::$l"; done
