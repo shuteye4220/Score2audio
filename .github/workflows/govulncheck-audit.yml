@@ -24,4 +24,7 @@ jobs:
           go version
           "$RUNNER_TEMP/govulncheck" ./... > out.txt 2>&1 || true
           cat out.txt
-          grep -E "^Vulnerability #|^    [A-Za-z]|Found in:|Fixed in:|^Your code|^No vulnerabilities|more vulnerabilit" out.txt | head -80 | while IFS= read -r l; do echo "::warning title=go1.24::$l"; done
+          summary=$(awk '/^Vulnerability #/{id=$3} /^    [A-Z]/ && id {print id": "$0; id=""}' out.txt | sed 's/  */ /g' | paste -sd'|' -)
+          echo "::warning title=go1.24 reachable::${summary}"
+          tail -n 3 out.txt | paste -sd' ' - | sed 's/^/::warning title=go1.24 totals::/'
+          "$RUNNER_TEMP/govulncheck" -show verbose ./... 2>&1 | grep -E "^Vulnerability #" -A2 | grep -vE "^--" | awk '/^Vulnerability/{id=$3; next} id{print id": "$0; id=""}' | sed 's/  */ /g' | paste -sd'|' - | sed 's/^/::warning title=go1.24 all incl. unreachable::/' 
