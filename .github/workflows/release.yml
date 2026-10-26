@@ -11,35 +11,77 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  desktop:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-
       - name: Work out the version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
-          else
-            echo "VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-          fi
-
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else echo "VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"; fi
       - name: Test and build Windows, Mac and Linux downloads
         run: make dist VERSION="$VERSION"
-
       - uses: actions/upload-artifact@v4
         with:
-          name: score2audio-${{ env.VERSION }}
+          name: desktop
           path: dist/*
 
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - name: Work out the version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then V="${GITHUB_REF_NAME#v}"; else V="dev-${GITHUB_SHA::7}"; fi
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+      - name: Build the app
+        env:
+          SIGNING_STORE_BASE64: ${{ secrets.SIGNING_STORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -n "$SIGNING_STORE_BASE64" ]; then
+            echo "$SIGNING_STORE_BASE64" | base64 -d > "$RUNNER_TEMP/signing.p12"
+            export SIGNING_STORE_FILE="$RUNNER_TEMP/signing.p12"
+          else
+            unset SIGNING_STORE_PASSWORD SIGNING_KEY_ALIAS SIGNING_KEY_PASSWORD
+          fi
+          gradle --no-daemon assembleRelease -PappVersion="$VERSION" -PappVersionCode="$VERSION_CODE"
+          mkdir -p ../dist
+          cp app/build/outputs/apk/release/app-release.apk ../dist/score2audio-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/score2audio-android.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - name: Publish release
-        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/* \
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
             --title "score2audio ${GITHUB_REF_NAME}" --generate-notes
