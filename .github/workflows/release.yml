@@ -86,7 +86,7 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk ../dist/score2audio-android.apk
           # Check which key actually signed the app.
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner"
-          cert=$("$apksigner" verify --print-certs ../dist/score2audio-android.apk | awk -F': ' '/certificate SHA-256 digest/{print $2; exit}')
+          cert=$("$apksigner" verify --print-certs ../dist/score2audio-android.apk | grep -i -m1 "certificate SHA-256 digest" | grep -oiE "[0-9a-f]{64}" | tr 'A-F' 'a-f')
           echo "::notice title=Android signing::Signed with certificate SHA-256 $cert"
           if [ "$SIGNED" = yes ] && [ "$cert" != "$EXPECTED_CERT_SHA256" ]; then
             echo "::error title=Android signing::The app was signed with an unexpected key ($cert)."
