@@ -4,7 +4,7 @@ score2audio turns a PDF of sheet music into sound. It reads the printed music, s
 
 It was made so that musicians who cannot read print music can learn their parts. The whole program is used through an accessible web page that works with screen readers such as NVDA, JAWS, Narrator, VoiceOver and Orca, and with the keyboard alone. The page aims to meet WCAG 2.1 level AA.
 
-score2audio runs on Windows, macOS and Linux. Everything happens on your own computer; your scores are not sent anywhere.
+score2audio runs on Windows, macOS and Linux, and scores it has read can be played on Android with the score2audio app. Everything happens on your own computer; your scores are not sent anywhere.
 
 ## What you can do
 
@@ -51,6 +51,24 @@ A Terminal window opens and shows score2audio's messages, and your web browser o
 
 If score2audio cannot find Audiveris, the Setup section of the page explains what to do, and lets you type where Audiveris is installed.
 
+### Android app (beta)
+
+The score2audio app plays scores on an Android phone or braille notetaker (Android 10 or newer). It does not read PDFs itself: read the PDF with score2audio on a computer, choose "Export for mobile", and copy the `.s2a` file to the device.
+
+1. Download `score2audio-android.apk` from the Releases page onto the device, or copy it there.
+2. Open it from your file manager. Android will ask you to allow that file manager to install apps; allow it, then go back and install.
+3. Open score2audio, choose "Add a score file", and pick the `.s2a` file. You can also open `.s2a` files straight from a file manager.
+
+The app is built only from standard Android controls, one task per screen, so it works well with screen readers and braille displays:
+
+- Your scores: the scores on the device, and Add a score file.
+- A score: Play (which becomes Pause and Continue), Stop, Give starting notes, Save as audio file, the tempo and measure range, and the same play options as on a computer.
+- Lines to play: a checkbox for each line, with a Settings button for its volume, sound, pitch and your own name for it.
+- Lyrics: one item per printed line of music; choosing one plays from there.
+- Read the notes: one item per measure, as text; choosing one plays that measure of the line.
+
+Audio files are saved in the Music/score2audio folder.
+
 ## Using it
 
 The page is divided by headings, so you can move between sections with your screen reader's heading keys.
@@ -83,7 +101,9 @@ If you already have a score as MusicXML (a `.mxl`, `.musicxml` or `.xml` file, f
 
 ## Building from source
 
-You need Go 1.22 or newer (on Arch Linux: `sudo pacman -S go`; on a Mac with Homebrew: `brew install go`) and, for `make dist`, `curl` and `zip`.
+The Android app is in the `android` folder; build it with Gradle 8.10 or Android Studio (`gradle assembleRelease`). It is signed with the project's own key, `android/score2audio.p12`, so each build can update the last; to use a private key instead, set the repository secrets `SIGNING_STORE_BASE64`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS` and `SIGNING_KEY_PASSWORD`.
+
+For the desktop program you need Go 1.22 or newer (on Arch Linux: `sudo pacman -S go`; on a Mac with Homebrew: `brew install go`) and, for `make dist`, `curl` and `zip`.
 
 ```
 make            # build for this computer
