@@ -399,8 +399,11 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 		kind = "pdf"
 	case ".mxl", ".musicxml", ".xml":
 		kind = "musicxml"
+	case ".s2a":
+		importS2A(w, r, name)
+		return
 	default:
-		httpErr(w, 400, "Please choose a PDF file, or a MusicXML file ending in .mxl, .musicxml or .xml.")
+		httpErr(w, 400, "Please choose a PDF file, a score2audio score ending in .s2a, or a MusicXML file ending in .mxl, .musicxml or .xml.")
 		return
 	}
 	id := newID()
@@ -714,26 +717,12 @@ func handleScore(w http.ResponseWriter, r *http.Request, id string, rest []strin
 	}
 	switch {
 	case action == "" && r.Method == http.MethodGet:
-		b, err := os.ReadFile(filepath.Join(dir, "model.json"))
-		var m Model
-		if err == nil {
-			err = json.Unmarshal(b, &m)
+		mp, err := storedModel(meta)
+		if err != nil {
+			httpErr(w, 500, "Could not open the score: "+err.Error())
+			return
 		}
-		if err != nil || m.Version != modelVersion {
-			// rebuild from the stored MusicXML (newer program version)
-			files := mxlFiles(filepath.Join(dir, "omr"))
-			for _, ext := range []string{".mxl", ".musicxml", ".xml"} {
-				if isFile(filepath.Join(dir, "source"+ext)) {
-					files = []string{filepath.Join(dir, "source"+ext)}
-				}
-			}
-			mm, err := buildAndStore(meta, files)
-			if err != nil {
-				httpErr(w, 500, "Could not open the score: "+err.Error())
-				return
-			}
-			m = *mm
-		}
+		m := *mp
 		prefs := json.RawMessage("null")
 		if p, err := os.ReadFile(filepath.Join(dir, "prefs.json")); err == nil && json.Valid(p) {
 			prefs = p
@@ -785,6 +774,8 @@ func handleScore(w http.ResponseWriter, r *http.Request, id string, rest []strin
 		safe := regexp.MustCompile(`[^\w\- ]+`).ReplaceAllString(meta.Title, "")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s%s"`, safe, filepath.Ext(files[0])))
 		http.ServeFile(w, r, files[0])
+	case action == "export" && r.Method == http.MethodGet:
+		exportS2A(w, meta)
 	case action == "" && r.Method == http.MethodDelete:
 		os.RemoveAll(dir)
 		writeJSON(w, map[string]bool{"ok": true})

@@ -751,8 +751,10 @@
           $('h-library').setAttribute('tabindex', '-1'); $('h-library').focus();
         } catch (e) { setError(e.message); }
       });
+      const exp = el('button', { type: 'button', text: 'Export for mobile', 'aria-label': `Export for mobile: ${it.title}` });
+      exp.addEventListener('click', () => exportScore(it.id));
       list.append(el('li', {}, el('strong', { text: it.title }),
-        el('span', { class: 'meta', text: `Added ${date}, ${it.measures} measures, from ${it.fileName}` }), open, del));
+        el('span', { class: 'meta', text: `Added ${date}, ${it.measures} measures, from ${it.fileName}` }), open, exp, del));
     }
   }
 
@@ -910,14 +912,33 @@
   });
   $('notes-line').addEventListener('change', () => { opts.notesLine = $('notes-line').value; savePrefs(); renderNotes(); });
   $('btn-wav').addEventListener('click', saveWav);
+  // downloads a file from score2audio, keeping the name it suggests
+  async function download(path, fallback) {
+    const r = await fetch(path, { headers: { 'X-Token': TOKEN } });
+    if (!r.ok) throw new Error((await r.text()).trim() || r.statusText);
+    const cd = r.headers.get('content-disposition') || '';
+    let name = fallback;
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    const plain = cd.match(/filename="([^"]+)"/);
+    if (star) name = decodeURIComponent(star[1]); else if (plain) name = plain[1];
+    const a = el('a', { href: URL.createObjectURL(await r.blob()), download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    return name;
+  }
+
+  async function exportScore(id) {
+    setError('');
+    try {
+      const name = await download(`/api/scores/${id}/export`, 'score.s2a');
+      setStatus(`Your browser has saved "${name}", usually in your Downloads folder. Copy it to your phone or braille notetaker, or to another computer, and open it in score2audio there.`);
+    } catch (e) { setError(e.message); }
+  }
+
+  $('btn-export').addEventListener('click', () => exportScore(score.id));
   $('btn-xml').addEventListener('click', async () => {
     try {
-      const r = await fetch(`/api/scores/${score.id}/musicxml`, { headers: { 'X-Token': TOKEN } });
-      if (!r.ok) throw new Error(await r.text());
-      const cd = r.headers.get('content-disposition') || '';
-      const name = (cd.match(/filename="([^"]+)"/) || [])[1] || 'score.mxl';
-      const a = el('a', { href: URL.createObjectURL(await r.blob()), download: name });
-      document.body.append(a); a.click(); a.remove();
+      const name = await download(`/api/scores/${score.id}/musicxml`, 'score.mxl');
       setStatus(`Your browser has saved "${name}". You can open it in MuseScore or other music programs.`);
     } catch (e) { setError(e.message); }
   });

@@ -18,7 +18,8 @@ score2audio runs on Windows, macOS and Linux. Everything happens on your own com
 - Hear the starting notes of the chosen lines, lowest first, then together.
 - Read the lyrics, line by line as they appear on the page, with a "Play from measure" button for each line.
 - Read the notes of any line as a table, one row per measure (for example "F 3, half; E flat 3, quarter"), and play any single measure.
-- Save the chosen lines as a WAV audio file to practise on a phone or other player.
+- Save the chosen lines as a WAV audio file to practise on a phone or other player, with the "Save as audio file" button next to Play.
+- Export a score that has been read as a score2audio score file (`.s2a`), with "Export for mobile". It holds the recognised music and your line choices, so it plays on the score2audio mobile app, or on another computer, without reading the PDF again. Anyone you share it with does not need Audiveris.
 - Keep a library of the scores you have opened, so each PDF only needs to be read once. Each score remembers your line, volume and tempo choices.
 
 ## Installing
@@ -75,6 +76,8 @@ Scanned photocopies, handwritten music and very crowded scores give poorer resul
 Repeat signs with first and second endings are followed. "D.S.", "D.C." and "To Coda" directions are not yet followed; play those sections using the measure range instead. Tempo changes written as words, such as "rit." or "A little slower", are not applied.
 
 ## Other ways to open music
+
+A score2audio score file (`.s2a`), exported from score2audio on this or another computer, opens straight away, with the line names, volumes and tempo it was exported with. The format is described in [docs/s2a-format.md](docs/s2a-format.md).
 
 If you already have a score as MusicXML (a `.mxl`, `.musicxml` or `.xml` file, for example exported from MuseScore, Finale, Sibelius or Dorico, or downloaded from a music library), open it directly. Audiveris is not needed for these, and the result is exact.
 

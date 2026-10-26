@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -87,5 +88,37 @@ func TestParseSample(t *testing.T) {
 	}
 	if len(m.Verses) != 1 || m.Verses[0].Words[0].Text != "Always" {
 		t.Fatalf("lyrics wrong: %+v", m.Verses)
+	}
+}
+
+func TestS2ARoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	dataDir = dir
+	p := filepath.Join(dir, "a.musicxml")
+	os.WriteFile(p, []byte(sample), 0o644)
+	os.MkdirAll(filepath.Join(dir, "scores", "20260101000000aaaa"), 0o755)
+	meta := &ScoreMeta{ID: "20260101000000aaaa", Title: "Test Hymn", FileName: "hymn.pdf", Kind: "pdf"}
+	os.MkdirAll(filepath.Join(scoreDir(meta.ID), "omr"), 0o755)
+	data, _ := os.ReadFile(p)
+	os.WriteFile(filepath.Join(scoreDir(meta.ID), "omr", "hymn.musicxml"), data, 0o644)
+	if _, err := buildAndStore(meta, []string{filepath.Join(scoreDir(meta.ID), "omr", "hymn.musicxml")}); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(scoreDir(meta.ID), "prefs.json"), []byte(`{"opts":{"tempo":70}}`), 0o644)
+
+	rec := httptest.NewRecorder()
+	exportS2A(rec, meta)
+	if rec.Code != 200 {
+		t.Fatalf("export failed: %d %s", rec.Code, rec.Body.String())
+	}
+	f, music, err := readS2A(rec.Body.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Title != "Test Hymn" || f.SourceFile != "hymn.pdf" || len(music) != 1 || f.Model == nil || len(f.Model.Lines) == 0 || string(f.Prefs) != `{"opts":{"tempo":70}}` {
+		t.Fatalf("export content wrong: %+v (music files %d)", f, len(music))
+	}
+	if _, _, err := readS2A([]byte("not a zip")); err == nil {
+		t.Fatal("accepted a non-score file")
 	}
 }

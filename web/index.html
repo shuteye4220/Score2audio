@@ -88,6 +88,7 @@
   <section aria-labelledby="h-save" class="card">
     <h3 id="h-save">Other options</h3>
     <div class="btnrow">
+      <button type="button" id="btn-export" aria-describedby="export-help">Export for the mobile app</button>
       <button type="button" id="btn-xml">Download the recognised music (MusicXML)</button>
       <button type="button" id="btn-reread">Read the PDF again</button>
       <button type="button" id="btn-close">Close this score</button>
@@ -104,9 +105,9 @@
   <h2 id="h-open">Open a score</h2>
   <form id="open-form" novalidate>
     <div class="field">
-      <label for="file">Score file (PDF, or MusicXML)</label>
-      <input type="file" id="file" accept=".pdf,.mxl,.musicxml,.xml,application/pdf" aria-describedby="file-help">
-      <p id="file-help" class="help">Reading a PDF usually takes 10 to 20 seconds per page. You can do other things while it works.</p>
+      <label for="file">Score file (PDF, score2audio score, or MusicXML)</label>
+      <input type="file" id="file" accept=".pdf,.s2a,.mxl,.musicxml,.xml,application/pdf" aria-describedby="file-help">
+      <p id="file-help" class="help">Reading a PDF usually takes 10 to 20 seconds per page. You can do other things while it works. A score2audio score (ending in .s2a) is a score that has already been read, exported from score2audio on this or another computer; it opens straight away.</p>
     </div>
     <button type="submit" class="primary" id="btn-open">Read score</button>
   </form>
@@ -126,6 +127,7 @@
 <section id="library-section" aria-labelledby="h-library" class="card">
   <h2 id="h-library">Your scores</h2>
   <p id="library-empty" class="help">Scores you open are kept here, so you only need to read each PDF once.</p>
+  <p id="export-help" class="help">Export for the mobile app saves the score as one file ending in .s2a, with the music already read and your line choices, for the score2audio mobile app or for score2audio on another computer.</p>
   <ul id="library" class="library"></ul>
 </section>
 
