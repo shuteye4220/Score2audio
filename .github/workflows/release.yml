@@ -6,6 +6,8 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -73,6 +75,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [desktop, android]
     runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ github.ref_name }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -83,7 +87,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ls -l dist
-          PRE=""
-          if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRE="--prerelease"; fi
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" $PRE \
-            --title "score2audio ${GITHUB_REF_NAME}" --generate-notes
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # the release was made on GitHub's website: add the downloads to it
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            PRE=""
+            if [[ "$GITHUB_REF_NAME" == *-* ]]; then PRE="--prerelease"; fi
+            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" $PRE \
+              --title "score2audio ${GITHUB_REF_NAME}" --generate-notes
+          fi
