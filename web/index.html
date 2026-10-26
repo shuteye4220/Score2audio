@@ -30,7 +30,9 @@
       <button type="button" id="btn-play" class="primary">Play</button>
       <button type="button" id="btn-stop">Stop</button>
       <button type="button" id="btn-pitches">Give starting notes</button>
+      <button type="button" id="btn-wav" aria-describedby="wav-help">Save as audio file</button>
     </div>
+    <p class="help" id="wav-help">Save as audio file makes a WAV file of the chosen lines, measures, tempo, volumes and sounds, for a phone or other player.</p>
     <p class="position"><span id="position-text">Stopped at the beginning.</span> <span id="lyric-now"></span></p>
 
     <div class="grid">
@@ -84,14 +86,12 @@
   </section>
 
   <section aria-labelledby="h-save" class="card">
-    <h3 id="h-save">Save and other options</h3>
+    <h3 id="h-save">Other options</h3>
     <div class="btnrow">
-      <button type="button" id="btn-wav">Save the chosen lines as an audio file</button>
       <button type="button" id="btn-xml">Download the recognised music (MusicXML)</button>
       <button type="button" id="btn-reread">Read the PDF again</button>
       <button type="button" id="btn-close">Close this score</button>
     </div>
-    <p class="help">The audio file is a WAV file of the chosen lines, measures and tempo, which you can copy to a phone or other player.</p>
     <div class="field">
       <label for="rename">Score title</label>
       <input type="text" id="rename" autocomplete="off">
