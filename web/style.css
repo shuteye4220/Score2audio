@@ -175,3 +175,7 @@ footer.site { padding-bottom: 2rem; }
   button.primary { border: 2px solid ButtonText; }
   ol.lyric-lines li[aria-current="true"], tr[aria-current="true"] td { outline: 2px solid Highlight; }
 }
+
+.failure-lines { font-family: ui-monospace, Consolas, monospace; font-size: .95rem; overflow-wrap: anywhere; }
+.failure-lines li { margin: .2rem 0; }
+#failure textarea { width: 100%; min-height: 10rem; font: inherit; color: var(--fg); background: var(--bg); border: 2px solid var(--border); }

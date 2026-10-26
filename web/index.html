@@ -110,6 +110,12 @@
     </div>
     <button type="submit" class="primary" id="btn-open">Read score</button>
   </form>
+  <div id="failure" hidden>
+    <h3 id="h-failure" tabindex="-1">What Audiveris reported</h3>
+    <p class="help">These are the important lines from Audiveris. If you ask for help, include them, or the full report saved at: <span id="failure-log"></span></p>
+    <ul id="failure-lines" class="failure-lines"></ul>
+    <button type="button" id="btn-copy-failure">Copy these details</button>
+  </div>
   <div id="job" hidden>
     <label for="job-progress" id="job-label">Reading the score</label>
     <progress id="job-progress" max="100"></progress>

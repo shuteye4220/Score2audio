@@ -54,6 +54,8 @@ type Job struct {
 	Started  time.Time `json:"started"`
 	Elapsed  int       `json:"elapsed"`
 	LogLines []string  `json:"-"`
+	Details  []string  `json:"details,omitempty"`
+	LogPath  string    `json:"logPath,omitempty"`
 	failed   []int
 }
 
@@ -601,15 +603,22 @@ func runOMR(job *Job, meta *ScoreMeta, aud string) {
 			files = mxlFiles(out)
 		}
 	}
+	logPath := filepath.Join(dir, "audiveris-log.txt")
+	jobsMu.Lock()
+	logText := fmt.Sprintf("score2audio %s on %s/%s\nAudiveris: %s\nLyrics data: %s\n\n%s\n", appVersion, runtime.GOOS, runtime.GOARCH, aud, tessdataDir(), strings.Join(job.LogLines, "\n"))
+	lineCount := len(job.LogLines)
+	details := importantLines(job.LogLines)
+	jobsMu.Unlock()
+	os.WriteFile(logPath, []byte(logText), 0o644)
 	if len(files) == 0 {
 		msg := "Audiveris could not read music from this PDF."
 		if err != nil {
 			msg += " (" + err.Error() + ")"
 		}
-		jobsMu.Lock()
-		os.WriteFile(filepath.Join(dir, "audiveris-log.txt"), []byte(strings.Join(job.LogLines, "\n")), 0o644)
-		jobsMu.Unlock()
-		set(func(j *Job) { j.State, j.Message = "error", msg })
+		if lineCount == 0 {
+			msg += " Audiveris did not report anything. This usually means the version of Audiveris installed is the one without a console; on Windows, install the file ending in windowsConsole-x86_64.msi instead."
+		}
+		set(func(j *Job) { j.State, j.Message, j.Details, j.LogPath = "error", msg, details, logPath })
 		return
 	}
 	meta.SkippedPages = failed
@@ -619,6 +628,38 @@ func runOMR(job *Job, meta *ScoreMeta, aud string) {
 		return
 	}
 	set(func(j *Job) { j.State, j.Message = "done", "Finished reading the score" })
+}
+
+var importantRe = regexp.MustCompile(`(?i)\b(WARN|ERROR|SEVERE|FATAL)\b|exception|error:|could not|cannot|unable|out of memory|denied|not found`)
+
+// importantLines picks the lines of an Audiveris log that explain a failure.
+func importantLines(lines []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, l := range lines {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "at ") || !importantRe.MatchString(t) {
+			continue
+		}
+		if len(t) > 300 {
+			t = t[:300] + "..."
+		}
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 && len(lines) > 0 {
+		start := len(lines) - 15
+		if start < 0 {
+			start = 0
+		}
+		out = append(out, lines[start:]...)
+	}
+	if len(out) > 25 {
+		out = append(out[:5], out[len(out)-20:]...)
+	}
+	return out
 }
 
 func containsInt(list []int, v int) bool {

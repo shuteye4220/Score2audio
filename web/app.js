@@ -774,6 +774,15 @@
     if (focus) { $('h-open').setAttribute('tabindex', '-1'); $('h-open').focus(); }
   }
 
+  function showFailure(j) {
+    const box = $('failure'), list = $('failure-lines');
+    list.textContent = '';
+    for (const l of j.details || []) list.append(el('li', { text: l }));
+    $('failure-log').textContent = j.logPath || '';
+    box.hidden = !(j.details && j.details.length) && !j.logPath;
+    box.dataset.text = `${j.message}\n\n${(j.details || []).join('\n')}\n\nFull report: ${j.logPath || ''}`;
+  }
+
   let polling = false;
   async function watchJob(jobId, scoreId) {
     polling = true;
@@ -802,6 +811,7 @@
         if (j.state === 'error') {
           txt.textContent = '';
           setError(j.message);
+          showFailure(j);
           break;
         }
       }
@@ -813,6 +823,7 @@
   async function submitOpen(ev) {
     ev.preventDefault();
     setError('');
+    $('failure').hidden = true;
     const input = $('file');
     const file = input.files && input.files[0];
     if (!file) { setError('Choose a score file first.'); input.focus(); return; }
@@ -921,6 +932,19 @@
     } catch (e) { setError(e.message); }
   });
   $('btn-close').addEventListener('click', () => closeScore(true));
+  $('btn-copy-failure').addEventListener('click', async () => {
+    const text = $('failure').dataset.text || '';
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus('The details were copied. You can paste them into an email or message.');
+    } catch (e) {
+      const ta = el('textarea', { 'aria-label': 'Details to copy', readonly: true });
+      ta.value = text;
+      $('failure').append(ta);
+      ta.focus(); ta.select();
+      setStatus('Copying is not allowed here. The details are in the text box; press Control+C to copy them.');
+    }
+  });
   $('btn-rename').addEventListener('click', async () => {
     const t = $('rename').value.trim();
     if (!t) { setError('The title cannot be empty.'); $('rename').focus(); return; }
