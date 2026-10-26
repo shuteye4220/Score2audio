@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=score2audio
+GenericName=Sheet music player
+Comment=Hear the parts of a sheet music PDF
+Exec=score2audio
+Terminal=true
+Categories=AudioVideo;Audio;Music;Education;
+Keywords=music;score;sheet music;PDF;choir;accessibility;

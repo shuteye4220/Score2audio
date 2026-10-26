@@ -1,0 +1,7 @@
+/dist/
+/build/
+/score2audio
+/score2audio.exe
+/tessdata/
+*.zip
+*.tar.gz

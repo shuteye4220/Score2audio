@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>score2audio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="site">
+  <h1 id="page-title" tabindex="-1">score2audio</h1>
+  <p class="tagline">Hear any part of a sheet music PDF: voices, instruments or keyboards.</p>
+</header>
+
+<div id="status" class="status" role="status" aria-live="polite"></div>
+<div id="error" class="error" role="alert"></div>
+<div id="announcer" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
+
+<main id="main">
+
+<section id="player" aria-labelledby="score-title" hidden>
+  <h2 id="score-title" tabindex="-1">Score</h2>
+  <p id="score-summary"></p>
+  <ul id="score-warnings" class="warnings"></ul>
+
+  <section aria-labelledby="h-play" class="card">
+    <h3 id="h-play">Play</h3>
+    <div class="transport">
+      <button type="button" id="btn-play" class="primary">Play</button>
+      <button type="button" id="btn-stop">Stop</button>
+      <button type="button" id="btn-pitches">Give starting notes</button>
+    </div>
+    <p class="position"><span id="position-text">Stopped at the beginning.</span> <span id="lyric-now"></span></p>
+
+    <div class="grid">
+      <div class="field">
+        <label for="tempo">Tempo, in beats per minute</label>
+        <input type="number" id="tempo" min="20" max="300" step="1" inputmode="numeric" aria-describedby="tempo-help">
+        <p id="tempo-help" class="help"></p>
+      </div>
+      <div class="field">
+        <label for="from">From measure</label>
+        <input type="number" id="from" min="1" step="1" inputmode="numeric">
+      </div>
+      <div class="field">
+        <label for="to">To measure</label>
+        <input type="number" id="to" min="1" step="1" inputmode="numeric">
+      </div>
+    </div>
+    <div class="checks">
+      <div class="check"><input type="checkbox" id="loop"><label for="loop">Repeat the chosen measures until stopped</label></div>
+      <div class="check"><input type="checkbox" id="countin" checked><label for="countin">Count in one measure before starting</label></div>
+      <div class="check"><input type="checkbox" id="metronome"><label for="metronome">Metronome clicks while playing</label></div>
+      <div class="check" id="repeats-wrap" hidden><input type="checkbox" id="repeats" checked><label for="repeats">Follow repeat signs</label></div>
+      <div class="check"><input type="checkbox" id="say-measures"><label for="say-measures">Announce measure numbers while playing</label></div>
+      <div class="check"><input type="checkbox" id="say-lyrics"><label for="say-lyrics">Announce lyrics while playing</label></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-lines" class="card">
+    <h3 id="h-lines">Lines to play</h3>
+    <p class="help" id="lines-help">Check each line you want to hear. Lines are named from the labels printed on the score. When a staff holds two parts, it is offered as its upper notes, its lower notes, and all its notes. You can change lines, volumes and sounds while the music is playing.</p>
+    <div class="btnrow">
+      <button type="button" id="btn-every">Choose every line</button>
+      <button type="button" id="btn-none">Choose no lines</button>
+    </div>
+    <div id="lines"></div>
+  </section>
+
+  <section aria-labelledby="h-lyrics" class="card">
+    <h3 id="h-lyrics">Lyrics</h3>
+    <div id="lyrics"></div>
+  </section>
+
+  <section aria-labelledby="h-notes" class="card">
+    <h3 id="h-notes">Read the notes</h3>
+    <div class="field">
+      <label for="notes-line">Line to read</label>
+      <select id="notes-line"></select>
+    </div>
+    <p class="help">Each row lists one measure. The play buttons in this table play only the line chosen above.</p>
+    <div class="table-wrap" id="notes-wrap"></div>
+  </section>
+
+  <section aria-labelledby="h-save" class="card">
+    <h3 id="h-save">Save and other options</h3>
+    <div class="btnrow">
+      <button type="button" id="btn-wav">Save the chosen lines as an audio file</button>
+      <button type="button" id="btn-xml">Download the recognised music (MusicXML)</button>
+      <button type="button" id="btn-reread">Read the PDF again</button>
+      <button type="button" id="btn-close">Close this score</button>
+    </div>
+    <p class="help">The audio file is a WAV file of the chosen lines, measures and tempo, which you can copy to a phone or other player.</p>
+    <div class="field">
+      <label for="rename">Score title</label>
+      <input type="text" id="rename" autocomplete="off">
+      <button type="button" id="btn-rename">Save title</button>
+    </div>
+  </section>
+</section>
+
+<section id="open" aria-labelledby="h-open" class="card">
+  <h2 id="h-open">Open a score</h2>
+  <form id="open-form" novalidate>
+    <div class="field">
+      <label for="file">Score file (PDF, or MusicXML)</label>
+      <input type="file" id="file" accept=".pdf,.mxl,.musicxml,.xml,application/pdf" aria-describedby="file-help">
+      <p id="file-help" class="help">Reading a PDF usually takes 10 to 20 seconds per page. You can do other things while it works.</p>
+    </div>
+    <button type="submit" class="primary" id="btn-open">Read score</button>
+  </form>
+  <div id="job" hidden>
+    <label for="job-progress" id="job-label">Reading the score</label>
+    <progress id="job-progress" max="100"></progress>
+    <p id="job-text"></p>
+  </div>
+</section>
+
+<section id="library-section" aria-labelledby="h-library" class="card">
+  <h2 id="h-library">Your scores</h2>
+  <p id="library-empty" class="help">Scores you open are kept here, so you only need to read each PDF once.</p>
+  <ul id="library" class="library"></ul>
+</section>
+
+<section id="setup" aria-labelledby="h-setup" class="card">
+  <h2 id="h-setup">Setup</h2>
+  <p id="engine-status">Checking for the music reading program&hellip;</p>
+  <div id="engine-help" hidden>
+    <p>score2audio uses the free program Audiveris to read music from PDF files. To install it:</p>
+    <ol>
+      <li>Open the <a href="https://github.com/Audiveris/audiveris/releases" target="_blank" rel="noopener">Audiveris downloads page (opens in a new tab)</a>.</li>
+      <li data-os="windows">Under the newest release, download the file ending in <strong>windowsConsole-x86_64.msi</strong>, and run it.</li>
+      <li data-os="darwin" hidden>Under the newest release, download the file ending in <strong>macosx-arm64.dmg</strong> for a Mac with Apple silicon (M1 or newer), or <strong>macosx-x86_64.dmg</strong> for an Intel Mac. Open it and drag Audiveris to your Applications folder.</li>
+      <li data-os="linux" hidden>Install Audiveris from your distribution (for example the <strong>audiveris</strong> package in the Arch User Repository), from Flathub, or from the <strong>.deb</strong> file on the downloads page for Debian and Ubuntu.</li>
+      <li>Come back to this page and press the Check again button.</li>
+    </ol>
+    <p>MusicXML files can be opened without Audiveris.</p>
+  </div>
+  <form id="engine-form" novalidate>
+    <div class="field">
+      <label for="engine-path">Audiveris location (only needed if it is not found by itself)</label>
+      <input type="text" id="engine-path" autocomplete="off" aria-describedby="engine-path-help" spellcheck="false">
+      <p id="engine-path-help" class="help">For example: C:\Program Files\Audiveris</p>
+    </div>
+    <button type="submit">Save location</button>
+    <button type="button" id="btn-recheck">Check again</button>
+  </form>
+  <p id="ocr-status" class="help"></p>
+</section>
+
+</main>
+
+<footer class="site">
+  <button type="button" id="btn-quit">Quit score2audio</button>
+  <p class="help">score2audio <span id="version"></span> runs only on this computer. Your scores are not sent anywhere.</p>
+</footer>
+
+<script src="synth.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
