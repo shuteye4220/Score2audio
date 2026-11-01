@@ -103,7 +103,7 @@ jobs:
             echo "::warning title=Android signing::The signing secrets are not set; building with a throwaway debug key (not published to the builds branch)."
             SIGNED=no; echo "SIGNED=no" >> "$GITHUB_ENV"
           fi
-          gradle --no-daemon assembleRelease -PappVersion="$VERSION" -PappVersionCode="$VERSION_CODE"
+          gradle --no-daemon testReleaseUnitTest assembleRelease -PappVersion="$VERSION" -PappVersionCode="$VERSION_CODE"
           rm -f "$RUNNER_TEMP/signing.p12"
           mkdir -p ../dist
           cp app/build/outputs/apk/release/app-release.apk ../dist/score2audio-android.apk

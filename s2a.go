@@ -100,8 +100,11 @@ func exportS2A(w http.ResponseWriter, meta *ScoreMeta) {
 	}
 	f := S2AFile{Format: s2aFormat, FormatVersion: s2aFormatVersion, AppVersion: appVersion, Exported: time.Now().UTC(),
 		Title: meta.Title, SourceFile: meta.FileName, SkippedPages: meta.SkippedPages, Model: m, Prefs: prefs, MusicXML: []string{}}
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
+	type musicFile struct {
+		name string
+		data []byte
+	}
+	var music []musicFile
 	for i, src := range scoreMusicXML(dir) {
 		data, err := os.ReadFile(src)
 		if err != nil {
@@ -112,21 +115,34 @@ func exportS2A(w http.ResponseWriter, meta *ScoreMeta) {
 		if i == 0 {
 			name = "musicxml/score" + ext
 		}
-		method := zip.Deflate
-		if ext == ".mxl" {
-			method = zip.Store // already compressed
-		}
-		zf, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: method, Modified: time.Now()})
-		if err != nil {
-			continue
-		}
-		zf.Write(data)
+		music = append(music, musicFile{name, data})
 		f.MusicXML = append(f.MusicXML, name)
 	}
+	// score.json comes first, so readers that go through the file in order
+	// find it straight away. Every entry is deflated: Go writes an entry's
+	// size after its data, which streaming zip readers (Java's and
+	// Android's ZipInputStream) only accept for deflated entries. score2audio
+	// 1.0.0 stored .mxl files uncompressed, and the Android app could not
+	// open those exports.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
 	js, _ := json.Marshal(f)
-	zf, _ := zw.CreateHeader(&zip.FileHeader{Name: "score.json", Method: zip.Deflate, Modified: time.Now()})
-	zf.Write(js)
-	if err := zw.Close(); err != nil {
+	zf, err := zw.CreateHeader(&zip.FileHeader{Name: "score.json", Method: zip.Deflate, Modified: time.Now()})
+	if err == nil {
+		_, err = zf.Write(js)
+	}
+	for _, m := range music {
+		if err != nil {
+			break
+		}
+		if zf, err = zw.CreateHeader(&zip.FileHeader{Name: m.name, Method: zip.Deflate, Modified: time.Now()}); err == nil {
+			_, err = zf.Write(m.data)
+		}
+	}
+	if err == nil {
+		err = zw.Close()
+	}
+	if err != nil {
 		httpErr(w, 500, "Could not prepare the score: "+err.Error())
 		return
 	}

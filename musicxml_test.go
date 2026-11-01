@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -120,5 +122,20 @@ func TestS2ARoundTrip(t *testing.T) {
 	}
 	if _, _, err := readS2A([]byte("not a zip")); err == nil {
 		t.Fatal("accepted a non-score file")
+	}
+
+	// The layout must suit streaming zip readers (the Android app): score.json
+	// first, and no uncompressed entry with its size written after the data.
+	zr, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zr.File[0].Name != "score.json" {
+		t.Errorf("first entry is %q, want score.json", zr.File[0].Name)
+	}
+	for _, zf := range zr.File {
+		if zf.Method == zip.Store && zf.Flags&0x8 != 0 {
+			t.Errorf("%s is stored with a data descriptor, which ZipInputStream cannot read", zf.Name)
+		}
 	}
 }

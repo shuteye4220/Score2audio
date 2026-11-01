@@ -104,6 +104,8 @@ class MainActivity : Activity() {
                 main.post { status.say(e.message ?: "That file could not be added.") }
             } catch (e: Exception) {
                 main.post { status.say("That file could not be added: ${e.message ?: e}") }
+            } catch (e: OutOfMemoryError) {
+                main.post { status.say("That score is too large for this device's memory.") }
             }
         }.start()
     }

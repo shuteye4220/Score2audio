@@ -3,11 +3,9 @@ package io.github.shuteye4220.score2audio
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import org.json.JSONException
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.InputStream
-import java.util.zip.ZipInputStream
 
 /** The scores kept on this device, each in its own folder. */
 object Library {
@@ -52,10 +50,23 @@ object Library {
         if (lower.endsWith(".mxl") || lower.endsWith(".musicxml") || lower.endsWith(".xml")) {
             throw ScoreFileException("MusicXML files cannot be opened on this device yet. Open the file in score2audio on a computer, choose Export for mobile, and open the .s2a file here.")
         }
-        val json = ctx.contentResolver.openInputStream(uri)?.use { readScoreJson(it) }
-            ?: throw ScoreFileException("The file could not be opened.")
+        // A zip's table of contents is at its end, so the file is copied into
+        // this app's private cache first, read, and deleted again.
+        removeStaleImports(ctx)
+        val tmp = File.createTempFile("import", ".s2a", ctx.cacheDir)
+        val json = try {
+            val input = ctx.contentResolver.openInputStream(uri) ?: throw ScoreFileException("The file could not be opened.")
+            input.use { ScoreFile.copyLimited(it, tmp) }
+            ScoreFile.readScoreJson(tmp)
+        } finally {
+            tmp.delete()
+        }
         val id = "s" + System.currentTimeMillis().toString(36) + (100..999).random()
-        val root = JSONObject(json)
+        val root = try {
+            JSONObject(json)
+        } catch (e: JSONException) {
+            throw ScoreFileException("That score file is damaged: its score.json could not be read (${e.message}).")
+        }
         val score = Score.fromJson(id, root) // checks the file before it is kept
         val d = dir(ctx, id).apply { mkdirs() }
         File(d, "score.json").writeText(json)
@@ -87,29 +98,11 @@ object Library {
         }
     }
 
-    private fun readScoreJson(input: InputStream): String {
-        val zip = ZipInputStream(input.buffered())
-        try {
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                if (entry.name == "score.json") {
-                    val out = ByteArrayOutputStream()
-                    val buf = ByteArray(65536)
-                    while (true) {
-                        val n = zip.read(buf)
-                        if (n < 0) break
-                        out.write(buf, 0, n)
-                        if (out.size() > 80 * 1024 * 1024) throw ScoreFileException("That score file is too large.")
-                    }
-                    return out.toString("UTF-8")
-                }
-            }
-        } catch (e: ScoreFileException) {
-            throw e
-        } catch (e: Exception) {
-            throw ScoreFileException("That is not a score2audio score file. Score files end in .s2a and are made with Export for mobile in score2audio on a computer.")
-        }
-        throw ScoreFileException("That is not a score2audio score file. Score files end in .s2a and are made with Export for mobile in score2audio on a computer.")
+    /** Copies left behind if the app was closed while adding a score. */
+    private fun removeStaleImports(ctx: Context) {
+        val hourAgo = System.currentTimeMillis() - 60 * 60 * 1000
+        ctx.cacheDir.listFiles { f -> f.name.startsWith("import") && f.name.endsWith(".s2a") && f.lastModified() < hourAgo }
+            ?.forEach { it.delete() }
     }
 
     fun load(ctx: Context, id: String): Score {

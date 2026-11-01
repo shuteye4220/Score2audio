@@ -9,6 +9,10 @@ It is an ordinary zip file containing:
 
 Readers should ignore files and JSON fields they do not know about, so the format can grow.
 
+### Zip layout
+
+From version 1.0.1, score2audio writes `score.json` as the first entry and deflates every entry. Readers should still find entries through the zip's central directory (for example Java's `ZipFile`, not `ZipInputStream`): files exported by score2audio 1.0.0 put the MusicXML first, stored uncompressed with its size in a data descriptor after the data. That is valid zip, but streaming readers such as `ZipInputStream` refuse it.
+
 ## score.json
 
 | Field | Meaning |
