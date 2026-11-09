@@ -19,6 +19,7 @@ score2audio runs on Windows, macOS and Linux, and scores it has read can be play
 - Read the lyrics, line by line as they appear on the page, with a "Play from measure" button for each line.
 - Read the notes of any line as a table, one row per measure (for example "F 3, half; E flat 3, quarter"), and play any single measure.
 - Save the chosen lines as a WAV audio file to practise on a phone or other player, with the "Save as audio file" button next to Play.
+- Save the chosen lines as an MP4 video to send to others, with "Save as video": the lines as sheet music that scrolls with the playing, the current measure highlighted, the words under the notes and in large type underneath, and the same sound as the audio file. Choose only the alto line, for example, and the video shows and plays the alto part through the whole piece (or the measures chosen). Nothing else needs installing: the video is made by your web browser. See "Videos" below.
 - Export a score that has been read as a score2audio score file (`.s2a`), with "Export for mobile". It holds the recognised music and your line choices, so it plays on the score2audio mobile app, or on another computer, without reading the PDF again. Anyone you share it with does not need Audiveris.
 - Keep a library of the scores you have opened, so each PDF only needs to be read once. Each score remembers your line, volume and tempo choices.
 
@@ -31,7 +32,7 @@ Then download score2audio for your system from the Releases page of this project
 ### Windows
 
 1. Install Audiveris: download the file whose name ends in `windowsConsole-x86_64.msi` and run it. The default choices are fine.
-2. Download `score2audio-windows.zip` and unzip it into a folder of your choice. Keep the `tessdata` folder next to `score2audio.exe`; it is used to read lyrics.
+2. Download `score2audio-windows.zip` and unzip it into a folder of your choice. Keep the `tessdata` and `verovio` folders next to `score2audio.exe`; they are used to read lyrics and to make videos.
 3. Start `score2audio.exe`. A small console window opens and your web browser opens the score2audio page. If the browser does not open, the console window shows the address to open.
 
 Windows may warn that the program is from an unknown publisher, because it is not signed. Choose "More info", then "Run anyway".
@@ -137,11 +138,29 @@ Every change to the project is checked automatically: the tests run, `govulnchec
 
 To report a security problem, please open an issue on GitHub (or, for anything sensitive, contact the maintainer privately through GitHub).
 
+## Videos
+
+"Save as video" makes an MP4 video, 1280 by 720 pixels, of the lines that are chosen, over the chosen measures, at the chosen tempo. It shows:
+
+- the title, the names of the lines, and the measure being played;
+- the chosen lines engraved as sheet music, one staff per line, with the words under the notes, repeat signs and first and second endings; the music scrolls a line at a time and the measure being played is highlighted;
+- the lyrics in large type, with the word being sung highlighted and the next line underneath;
+- a bar showing how far through the piece the video is.
+
+The sound is the same as "Save as audio file": the chosen lines with their volumes, sounds and pitch settings, and metronome clicks if those are switched on. A video of a whole piece usually takes well under a minute or two to make; a progress bar shows how far it has got, and it can be cancelled.
+
+The video uses the line names: a line you have named under More settings (for example "Alto") is called that, and an unnamed line is called by the part it usually is.
+
+The notation is made from the notes score2audio plays, so what is seen matches what is heard; that also means any mistakes in reading the PDF show in the music. Lyrics only go under voices, not instruments.
+
+Videos are made by the web browser. Microsoft Edge and Google Chrome on Windows and Mac make videos with AAC sound, which plays everywhere. Other browsers may make videos with Opus sound, which a few older phones cannot play; if a browser cannot make videos at all, score2audio says so, and on Windows offers to open the page in Microsoft Edge.
+
 ## How it works
 
 1. Audiveris reads the PDF and writes MusicXML, a standard text format for sheet music.
 2. score2audio reads the MusicXML, works out timing, ties and repeats, joins up parts that Audiveris split because their labels are abbreviated later in the score ("Flute" on the first line, "Fl." after), identifies each part from its label, and splits staves that hold two parts.
 3. The web page plays the lines with sounds made by your browser, tuned to A = 440 Hz.
+4. For a video, score2audio writes the chosen lines as fresh MusicXML; the web page engraves it with Verovio, draws each frame, and encodes the picture (H.264) and sound (AAC) with the browser's own encoders (WebCodecs) into an MP4 file.
 
 ## Licence and credits
 
@@ -149,3 +168,5 @@ score2audio is released under the MIT licence; see the LICENSE file.
 
 - [Audiveris](https://github.com/Audiveris/audiveris), the open source music recognition program (AGPL licence), installed separately.
 - [Tesseract](https://github.com/tesseract-ocr/tessdata) English language data, used by Audiveris to read lyrics and labels (Apache 2.0 licence), included in the downloads.
+- [Verovio](https://www.verovio.org/), which engraves the music in videos (LGPL licence, version 3 or later). It is included unmodified in the downloads as its own file, in the `verovio` folder next to the program, with its licence; you can replace that file with another build of Verovio. See third_party/verovio/README.md.
+- [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) by Vanilagy, which writes the MP4 file (MIT licence; web/vendor/mp4-muxer.LICENSE.txt).

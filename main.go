@@ -36,6 +36,7 @@ var webFiles embed.FS
 var (
 	dataDir   string
 	token     string
+	pageURL   string // the address of the page, with its token
 	jobsMu    sync.Mutex
 	jobs      = map[string]*Job{}
 	settingMu sync.Mutex
@@ -110,12 +111,14 @@ func main() {
 	addr := ln.Addr().(*net.TCPAddr)
 	host := fmt.Sprintf("127.0.0.1:%d", addr.Port)
 	url := fmt.Sprintf("http://%s/?t=%s", host, token)
+	pageURL = url
 
 	mux := http.NewServeMux()
 	sub, _ := fs.Sub(webFiles, "web")
 	static := http.FileServer(http.FS(sub))
 	mux.Handle("/", noCache(static))
 	mux.HandleFunc("/api/", apiHandler)
+	mux.HandleFunc("/vendor/verovio-toolkit-wasm.js", serveVerovio)
 
 	srv := &http.Server{Handler: hostGuard(host, mux), ReadHeaderTimeout: 30 * time.Second}
 	fmt.Println("score2audio", appVersion, "is running.")
@@ -160,6 +163,11 @@ func hostGuard(host string, h http.Handler) http.Handler {
 		}
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		// Only this program's own scripts run; WebAssembly is allowed for the
+		// music engraver; nothing may show this page in a frame.
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "+
+			"style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self'; "+
+			"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		h.ServeHTTP(w, r)
 	})
 }
@@ -268,6 +276,33 @@ func exeDir() string {
 	return filepath.Dir(p)
 }
 
+// verovioFile is the music engraver used for videos. It ships as its own
+// file next to the program (LGPL: it can be replaced with another build).
+func verovioFile() string {
+	dirs := []string{filepath.Join(exeDir(), "verovio"), filepath.Join(exeDir(), "..", "Resources", "verovio"),
+		filepath.Join(exeDir(), "..", "share", "score2audio", "verovio"), filepath.Join(dataDir, "verovio")}
+	if runtime.GOOS != "windows" {
+		dirs = append(dirs, "/usr/share/score2audio/verovio")
+	}
+	for _, d := range dirs {
+		if p := filepath.Join(d, "verovio-toolkit-wasm.js"); isFile(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+func serveVerovio(w http.ResponseWriter, r *http.Request) {
+	p := verovioFile()
+	if p == "" {
+		http.Error(w, "The music engraver (Verovio) was not found.", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "private, max-age=86400")
+	http.ServeFile(w, r, p)
+}
+
 func tessdataDir() string {
 	dirs := []string{filepath.Join(exeDir(), "tessdata"), filepath.Join(exeDir(), "..", "Resources", "tessdata"),
 		filepath.Join(exeDir(), "..", "share", "score2audio", "tessdata"), filepath.Join(dataDir, "tessdata")}
@@ -315,6 +350,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 			"version":        appVersion,
 			"audiveris":      aud,
 			"tessdata":       tessdataDir() != "",
+			"video":          verovioFile() != "",
 			"os":             runtime.GOOS,
 			"savedAudiveris": loadSettings().AudiverisPath,
 		})
@@ -357,6 +393,18 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, copyJob)
 	case parts[0] == "scores" && len(parts) >= 2 && idRe.MatchString(parts[1]):
 		handleScore(w, r, parts[1], parts[2:])
+	case parts[0] == "open-edge" && r.Method == http.MethodPost:
+		// For browsers that cannot make videos: open this same page in Edge,
+		// which every Windows computer has. The address is our own.
+		if runtime.GOOS != "windows" {
+			httpErr(w, 400, "Microsoft Edge can only be opened this way on Windows.")
+			return
+		}
+		if err := exec.Command("rundll32", "url.dll,FileProtocolHandler", "microsoft-edge:"+pageURL).Start(); err != nil {
+			httpErr(w, 500, "Microsoft Edge could not be opened: "+err.Error())
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
 	case parts[0] == "quit" && r.Method == http.MethodPost:
 		writeJSON(w, map[string]bool{"ok": true})
 		go func() {
@@ -791,6 +839,24 @@ func handleScore(w http.ResponseWriter, r *http.Request, id string, rest []strin
 		http.ServeFile(w, r, files[0])
 	case action == "export" && r.Method == http.MethodGet:
 		exportS2A(w, meta)
+	case action == "notation" && r.Method == http.MethodPost:
+		var req NotationRequest
+		if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req); err != nil {
+			httpErr(w, 400, "Could not read the request for notation.")
+			return
+		}
+		m, err := storedModel(meta)
+		if err != nil {
+			httpErr(w, 500, "Could not open the score: "+err.Error())
+			return
+		}
+		x, err := NotationXML(m, req)
+		if err != nil {
+			httpErr(w, 400, "Could not write the notation: "+err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/vnd.recordare.musicxml+xml")
+		w.Write(x)
 	case action == "" && r.Method == http.MethodDelete:
 		os.RemoveAll(dir)
 		writeJSON(w, map[string]bool{"ok": true})

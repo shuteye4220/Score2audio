@@ -34,7 +34,7 @@ All times are in quarter notes from the start of the score, ignoring repeats. Me
 
 - `version` – the model version (internal; a reader may rebuild from the MusicXML if it prefers).
 - `title`
-- `measures` – one per measure, in printed order: `n` (printed number, a string), `t` (start), `d` (length), `beats`, `beatType`, and `sys: true` on measures that start a new line of music.
+- `measures` – one per measure, in printed order: `n` (printed number, a string), `t` (start), `d` (length), `beats`, `beatType`, and `sys: true` on measures that start a new line of music. From model version 7, also (each left out when it does not apply): `key` (key signature, sharps positive and flats negative), `repStart: true` where a repeat sign begins, `repEnd` (times played) where one ends, and for first and second endings `ending` (its numbers, on every measure under the bracket), `endFirst: true` on its first measure and `endLast` (`"stop"` or `"discontinue"`) on its last.
 - `order` – the measures to play, as indexes into `measures`, with repeats and first and second endings expanded.
 - `hasRepeats` – whether `order` differs from playing straight through.
 - `tempo` – tempo changes: `t` and `bpm` (quarter notes per minute). The first entry is at 0.
@@ -49,7 +49,7 @@ All times are in quarter notes from the start of the score, ignoring repeats. Me
   - `clef`, `low`, `high` (lowest and highest note names, as printed), `count` (number of notes).
   - `transpose` – semitones from written to sounding pitch suggested by the label (for example −2 for a B-flat clarinet), and `transposeNote` explaining it (optional).
   - `events` – the notes, in time order: `t` (start), `d` (length), `m` (MIDI note number as written; add the line's pitch shift to play), `mi` (measure index), `name` (for example "E flat 4"), `dur` (for example "dotted half"), and `ly` (lyric syllable, optional). Tied notes are joined into one event.
-- `verses` – lyrics, each with `name`, `words` (`t`, `mi`, `text`; one entry per word, at the time its first syllable starts) and `lines` (`from` and `to` measure indexes and `text`, one per printed line of music).
+- `verses` – lyrics, each with `name`, `words` (`t`, `mi`, `text`; one entry per word, at the time its first syllable starts) and `lines` (`from` and `to` measure indexes and `text`, one per printed line of music). From model version 7, also `syls`: each syllable as printed, with `t`, `mi`, `text` and `syllabic` (`single`, `begin`, `middle` or `end`).
 - `warnings` – messages to show the user.
 
 To play: walk `order`; each measure in it starts where the previous one ended, and each event in that measure (`mi`) sounds at the measure's play time plus (`t` − the measure's `t`). Convert quarter notes to seconds with `tempo`, scaled by the user's chosen tempo divided by the first tempo.

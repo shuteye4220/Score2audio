@@ -3,6 +3,7 @@
 /score2audio
 /score2audio.exe
 /tessdata/
+/verovio/
 *.zip
 *.tar.gz
 /android/.gradle/

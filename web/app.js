@@ -151,10 +151,10 @@
         if (!byM.has(w.mi)) byM.set(w.mi, []);
         byM.get(w.mi).push(w);
       }
-      for (const p of perf) {
+      perf.forEach((p, k) => {
         const meas = M.measures[p.mi];
-        for (const w of (byM.get(p.mi) || [])) words.push({ s: p.sec + secBetween(meas.t, w.t), text: w.text });
-      }
+        for (const w of (byM.get(p.mi) || [])) words.push({ s: p.sec + secBetween(meas.t, w.t), text: w.text, mi: p.mi, k });
+      });
       words.sort((a, b) => a.s - b.s);
     }
     return { perf, events, clicks, words, total: sec, countInSec, range };
@@ -415,6 +415,98 @@
   }
 
   // ---------- saving audio ----------
+  // The chosen lines of a plan, mixed as they are heard, with lead seconds of
+  // silence before and tail seconds after.
+  function renderMix(plan, chosen, rate, lead, tail) {
+    const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const ctx = new OAC(1, Math.ceil((lead + plan.total + tail) * rate), rate);
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 4;
+    const master = ctx.createGain(); master.gain.value = 0.8; master.connect(comp).connect(ctx.destination);
+    const gains = new Map();
+    for (const l of chosen) { const g = ctx.createGain(); g.gain.value = Math.pow(l.volume / 100, 2); g.connect(master); gains.set(l, g); }
+    for (const e of plan.events) if (gains.has(e.line)) Synth.note(ctx, gains.get(e.line), e.line.sound, e.midi + e.line.shift, e.s + lead, e.d, 0.9);
+    for (const c of plan.clicks) Synth.click(ctx, master, c.s + lead, c.accent);
+    return ctx.startRendering();
+  }
+
+  // A line's name for people watching a video: the user's own name for it,
+  // or the part it usually is, or its name without the clef.
+  function videoName(l) {
+    if (l.label) return l.label;
+    const m = /^usually (\w+)$/.exec(l.hint || '');
+    if (m) return m[1][0].toUpperCase() + m[1].slice(1);
+    return l.name.replace(/ \([^)]*clef[^)]*\)/, '');
+  }
+
+  let serverOS = '';
+  let videoCancelled = false;
+  let makingVideo = false;
+
+  async function saveVideo() {
+    setError('');
+    $('btn-edge').hidden = true;
+    const chosen = lines.filter((l) => l.enabled);
+    if (!chosen.length) { setError('No lines are chosen. Check at least one line under Lines to play.'); return; }
+    if (chosen.length > 16) { setError('Choose at most 16 lines for a video.'); return; }
+    if (makingVideo) return;
+    makingVideo = true;
+    videoCancelled = false;
+    stop();
+    const btn = $('btn-video'), box = $('video-progress'), bar = $('video-bar');
+    btn.disabled = true;
+    box.hidden = false;
+    bar.value = 0;
+    const range = currentRange();
+    const plan = buildPlan(range, false, opts.metronome, opts.verse);
+    const names = chosen.map(videoName);
+    let lastTenth = -1;
+    const progress = (f, msg) => {
+      bar.value = Math.round(f * 100);
+      const pct = Math.round(f * 100);
+      $('video-text').textContent = `${msg}: ${pct} percent.`;
+      const tenth = Math.floor(f * 10);
+      if (tenth !== lastTenth) {
+        lastTenth = tenth;
+        setStatus(`${msg}, ${pct} percent.`);
+      }
+    };
+    try {
+      setStatus('Making the video. This takes about as long as the music, or less; you can keep using the page.');
+      const xml = await api(`/api/scores/${score.id}/notation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: chosen.map((l, i) => ({ id: l.id, name: names[i] })), verse: opts.verse, from: range.from, to: range.to }),
+      });
+      const job = {
+        title: score.meta.title,
+        partsText: names.join(', ') + ` \u00b7 measures ${M.measures[range.from].n} to ${M.measures[range.to].n} \u00b7 ${opts.tempo} beats per minute`,
+        xml, staves: chosen.length, plan, measures: M.measures, from: range.from, measureCount: range.to - range.from + 1,
+        verse: M.verses[opts.verse] || null,
+        renderAudio: (rate, lead, tail) => renderMix(plan, chosen, rate, lead, tail),
+      };
+      const { blob, audioCodec } = await VideoMaker.make(job, progress, () => videoCancelled);
+      const what = chosen.length === 1 ? names[0] : `${chosen.length} lines`;
+      const name = `${score.meta.title} - ${what} - m${M.measures[range.from].n}-${M.measures[range.to].n} - ${opts.tempo}bpm.mp4`
+        .replace(/[\\/:*?"<>|()]+/g, '').replace(/\s+/g, ' ');
+      const a = el('a', { href: URL.createObjectURL(blob), download: name });
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      const mb = (blob.size / 1048576).toFixed(1);
+      setStatus(`Your browser has saved the video "${name}" (${mb} MB), usually in your Downloads folder.` +
+        (audioCodec === 'aac' ? '' : ' This browser could not make AAC sound, so the video uses Opus sound, which a few older phones cannot play. Microsoft Edge or Google Chrome on Windows make videos that play everywhere.'));
+    } catch (e) {
+      if (e instanceof VideoMaker.Cancelled) setStatus('The video was cancelled.');
+      else {
+        setError('The video could not be made: ' + e.message);
+        if (e.unsupported && serverOS === 'windows') $('btn-edge').hidden = false;
+      }
+    } finally {
+      box.hidden = true;
+      btn.disabled = false;
+      makingVideo = false;
+    }
+  }
+
   async function saveWav() {
     setError('');
     const chosen = lines.filter((l) => l.enabled);
@@ -422,19 +514,11 @@
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) { setError('This browser cannot make audio files.'); return; }
     const plan = buildPlan(currentRange(), false, opts.metronome, opts.verse);
-    const rate = 32000;
-    const ctx = new OAC(1, Math.ceil((plan.total + 1.5) * rate), rate);
-    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 4;
-    const master = ctx.createGain(); master.gain.value = 0.8; master.connect(comp).connect(ctx.destination);
-    const gains = new Map();
-    for (const l of chosen) { const g = ctx.createGain(); g.gain.value = Math.pow(l.volume / 100, 2); g.connect(master); gains.set(l, g); }
     const btn = $('btn-wav');
     btn.disabled = true;
     setStatus('Making the audio file. This can take a little while for a long piece.');
     try {
-      for (const e of plan.events) if (gains.has(e.line)) Synth.note(ctx, gains.get(e.line), e.line.sound, e.midi + e.line.shift, e.s + 0.2, e.d, 0.9);
-      for (const c of plan.clicks) Synth.click(ctx, master, c.s + 0.2, c.accent);
-      const buf = await ctx.startRendering();
+      const buf = await renderMix(plan, chosen, 32000, 0.2, 1.3);
       const blob = Synth.toWav(buf);
       const r = plan.range;
       const what = chosen.length === 1 ? lineName(chosen[0]) : `${chosen.length} lines`;
@@ -859,6 +943,8 @@
     try {
       const s = await api('/api/status');
       $('version').textContent = 'version ' + s.version;
+      serverOS = s.os;
+      if (!s.video) $('video-help').textContent = 'Save as video needs the verovio folder that comes with score2audio, next to the program. Download score2audio again to get it.';
       for (const li of document.querySelectorAll('[data-os]')) li.hidden = li.dataset.os !== s.os && !(li.dataset.os === 'linux' && !['windows', 'darwin'].includes(s.os));
       $('engine-path-help').textContent = { windows: 'For example: C:\\Program Files\\Audiveris', darwin: 'For example: /Applications/Audiveris.app' }[s.os] || 'For example: /opt/audiveris/bin/Audiveris';
       if (s.audiveris) {
@@ -928,6 +1014,14 @@
   });
   $('notes-line').addEventListener('change', () => { opts.notesLine = $('notes-line').value; savePrefs(); renderNotes(); });
   $('btn-wav').addEventListener('click', saveWav);
+  $('btn-video').addEventListener('click', saveVideo);
+  $('btn-video-cancel').addEventListener('click', () => { videoCancelled = true; });
+  $('btn-edge').addEventListener('click', async () => {
+    try {
+      await api('/api/open-edge', { method: 'POST' });
+      setStatus('score2audio is opening in Microsoft Edge. Make the video there.');
+    } catch (e) { setError(e.message); }
+  });
   // downloads a file from score2audio, keeping the name it suggests
   async function download(path, fallback) {
     const r = await fetch(path, { headers: { 'X-Token': TOKEN } });

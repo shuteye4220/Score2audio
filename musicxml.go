@@ -20,7 +20,7 @@ import (
 	"unicode"
 )
 
-const modelVersion = 6
+const modelVersion = 7
 
 // ---------- raw XML structures ----------
 
@@ -201,6 +201,14 @@ type MeasureInfo struct {
 	Beats     int     `json:"beats"`
 	BeatType  int     `json:"beatType"`
 	NewSystem bool    `json:"sys,omitempty"`
+	// Key signature: sharps (positive) or flats (negative); 0 is C major.
+	Fifths int `json:"key,omitempty"`
+	// Repeat signs and first/second ending brackets, as printed.
+	RepeatStart bool   `json:"repStart,omitempty"`
+	RepeatEnd   int    `json:"repEnd,omitempty"` // times played, when a repeat sign ends here
+	Ending      string `json:"ending,omitempty"` // ending numbers, on every measure under the bracket
+	EndingFirst bool   `json:"endFirst,omitempty"`
+	EndingLast  string `json:"endLast,omitempty"` // "stop" (bracket closed) or "discontinue" (open)
 }
 
 type TempoPoint struct {
@@ -253,6 +261,15 @@ type Verse struct {
 	Name  string      `json:"name"`
 	Words []Word      `json:"words"`
 	Lines []LyricLine `json:"lines"`
+	// The syllables as printed, for notation: one per note that has one.
+	Syllables []Syllable `json:"syls,omitempty"`
+}
+
+type Syllable struct {
+	T        float64 `json:"t"`
+	Mi       int     `json:"mi"`
+	Text     string  `json:"text"`
+	Syllabic string  `json:"syllabic"` // single | begin | middle | end
 }
 
 type Model struct {
@@ -492,8 +509,11 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 	restVoices := map[restKey]map[string]bool{}
 	partHasTranspose := make([]bool, len(s.Parts))
 
+	keys := make([][]int, len(s.Parts)) // key signature of each part at each measure
 	for pi, p := range s.Parts {
 		div := 1.0
+		fifths := 0
+		keys[pi] = make([]int, len(p.Measures))
 		beats, beatType := 4, 4
 		transpose := 0
 		curClef := map[int]string{}
@@ -520,6 +540,9 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 					}
 					if x.Staves > partStaves[pi] {
 						partStaves[pi] = x.Staves
+					}
+					if len(x.Keys) > 0 {
+						fifths = x.Keys[0].Fifths
 					}
 					for _, c := range x.Clefs {
 						n := c.Number
@@ -657,6 +680,7 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 			if pi == 0 || f.beats == 0 {
 				f.beats, f.beatType = beats, beatType
 			}
+			keys[pi][mi] = fifths
 			if l := maxCursor / div; l > f.maxLen {
 				f.maxLen = l
 			}
@@ -676,7 +700,8 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 		if i < len(s.Parts[0].Measures) && s.Parts[0].Measures[i].Number != "" {
 			num = s.Parts[0].Measures[i].Number
 		}
-		m.Measures = append(m.Measures, MeasureInfo{Number: num, T: t, D: length, Beats: f.beats, BeatType: f.beatType, NewSystem: f.newSystem || i == 0})
+		m.Measures = append(m.Measures, MeasureInfo{Number: num, T: t, D: length, Beats: f.beats, BeatType: f.beatType, NewSystem: f.newSystem || i == 0,
+			Fifths: keyAt(keys, partHasTranspose, i)})
 		t += length
 	}
 	for _, n := range notes {
@@ -705,6 +730,7 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 	}
 
 	m.Order, m.HasRepeats = performanceOrder(facts)
+	markRepeats(m, facts)
 
 	// merge ties, per staff
 	byStaff := map[staffKey][]*rawNote{}
@@ -909,6 +935,20 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 		m.Warnings = append(m.Warnings, "No notes were found in this score.")
 	}
 	return m
+}
+
+// keyAt is the key signature at measure mi, taken from the first part that
+// is written at concert pitch.
+func keyAt(keys [][]int, transposed []bool, mi int) int {
+	for pi := range keys {
+		if !transposed[pi] && mi < len(keys[pi]) {
+			return keys[pi][mi]
+		}
+	}
+	if len(keys) > 0 && mi < len(keys[0]) {
+		return keys[0][mi]
+	}
+	return 0
 }
 
 func clefDescription(sign string, line, octave int) string {
@@ -1285,6 +1325,17 @@ func buildLyrics(notes []*rawNote, m *Model) []Verse {
 			name = "Lyrics"
 		}
 		verse := Verse{Name: name, Words: words}
+		for _, s := range uniq {
+			txt := strings.Trim(s.text, "-_ ")
+			if txt == "" {
+				continue
+			}
+			syl := s.syllabic
+			if syl != "begin" && syl != "middle" && syl != "end" {
+				syl = "single"
+			}
+			verse.Syllables = append(verse.Syllables, Syllable{T: round3(s.t), Mi: s.mi, Text: txt, Syllabic: syl})
+		}
 		// group into printed systems
 		start := 0
 		flush := func(end int) {
@@ -1308,6 +1359,31 @@ func buildLyrics(notes []*rawNote, m *Model) []Verse {
 		verses = append(verses, verse)
 	}
 	return verses
+}
+
+// markRepeats copies the printed repeat signs and ending brackets into the
+// model, for notation.
+func markRepeats(m *Model, f []measureFacts) {
+	open := ""
+	for i := range f {
+		if i >= len(m.Measures) {
+			break
+		}
+		mm := &m.Measures[i]
+		mm.RepeatStart = f[i].repeatFwd
+		mm.RepeatEnd = f[i].repeatBack
+		if f[i].endings != "" {
+			open = f[i].endings
+			mm.EndingFirst = true
+		}
+		if open != "" {
+			mm.Ending = open
+			if t := f[i].endingType; t == "stop" || t == "discontinue" {
+				mm.EndingLast = t
+				open = ""
+			}
+		}
+	}
 }
 
 // performanceOrder expands repeat signs and first/second endings.

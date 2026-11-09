@@ -31,8 +31,17 @@
       <button type="button" id="btn-stop">Stop</button>
       <button type="button" id="btn-pitches">Give starting notes</button>
       <button type="button" id="btn-wav" aria-describedby="wav-help">Save as audio file</button>
+      <button type="button" id="btn-video" aria-describedby="video-help">Save as video</button>
     </div>
     <p class="help" id="wav-help">Save as audio file makes a WAV file of the chosen lines, measures, tempo, volumes and sounds, for a phone or other player.</p>
+    <p class="help" id="video-help">Save as video makes an MP4 video to share: the chosen lines as sheet music that scrolls with the playing, the current measure highlighted, the lyrics underneath, and the same sound as the audio file. Rename a line under More settings to change what the video calls it.</p>
+    <div id="video-progress" hidden>
+      <label for="video-bar">Making the video</label>
+      <progress id="video-bar" max="100" value="0"></progress>
+      <p id="video-text"></p>
+      <button type="button" id="btn-video-cancel">Cancel the video</button>
+    </div>
+    <button type="button" id="btn-edge" hidden>Open score2audio in Microsoft Edge</button>
     <p class="position"><span id="position-text">Stopped at the beginning.</span> <span id="lyric-now"></span></p>
 
     <div class="grid">
@@ -165,6 +174,8 @@
 </footer>
 
 <script src="synth.js"></script>
+<script src="vendor/mp4-muxer.js"></script>
+<script src="video.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
