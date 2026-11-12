@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -74,8 +75,21 @@ type ScoreMeta struct {
 }
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "--read" {
+		dataDir = os.TempDir()
+		os.Exit(readCommand(os.Args[2], os.Args[3]))
+	}
 	if len(os.Args) > 2 && os.Args[1] == "--dump" {
-		m, err := LoadModel(os.Args[2:], "test")
+		// pages "--read" left out, so the tempo marks line up
+		var skipped []int
+		if b, err := os.ReadFile(filepath.Join(filepath.Dir(os.Args[2]), "skipped-pages.txt")); err == nil {
+			for _, f := range strings.Fields(string(b)) {
+				if n, err := strconv.Atoi(f); err == nil {
+					skipped = append(skipped, n)
+				}
+			}
+		}
+		m, err := loadModel(os.Args[2:], "test", skipped)
 		if err != nil {
 			fmt.Println("error:", err)
 			os.Exit(1)
@@ -311,11 +325,36 @@ func tessdataDir() string {
 			"/usr/share/tesseract-ocr/4.00/tessdata", "/usr/local/share/tessdata", "/opt/homebrew/share/tessdata")
 	}
 	for _, d := range dirs {
-		if isFile(filepath.Join(d, "eng.traineddata")) {
+		if hasLegacyOCR(filepath.Join(d, "eng.traineddata")) {
 			return d
 		}
 	}
 	return ""
+}
+
+// hasLegacyOCR tells whether a Tesseract language file includes the older
+// ("legacy") recogniser, which Audiveris uses. The smaller "fast" and "best"
+// files that many Linux systems install hold only the newer one; with those,
+// Audiveris reads no text at all (no lyrics, part names or tempo marks).
+//
+// The file starts with the number of parts it can hold (a 32-bit integer)
+// and then where each part starts (64-bit integers, -1 when absent). Part 3
+// is the legacy recogniser's character templates.
+func hasLegacyOCR(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	var head [4 + 8*4]byte
+	if _, err := io.ReadFull(f, head[:]); err != nil {
+		return false
+	}
+	n := int32(binary.LittleEndian.Uint32(head[0:4]))
+	if n < 4 || n > 64 {
+		return false
+	}
+	return int64(binary.LittleEndian.Uint64(head[4+8*3:])) != -1
 }
 
 // ---------- API ----------
@@ -501,7 +540,7 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func buildAndStore(meta *ScoreMeta, files []string) (*Model, error) {
-	m, err := LoadModel(files, meta.Title)
+	m, err := loadModel(files, meta.Title, meta.SkippedPages)
 	if err != nil {
 		return nil, err
 	}
@@ -660,17 +699,9 @@ func appendUnique(list []int, v int) []int {
 	return append(list, v)
 }
 
-func runOMR(job *Job, meta *ScoreMeta, aud string) {
-	dir := scoreDir(meta.ID)
-	out := filepath.Join(dir, "omr")
-	os.RemoveAll(out)
-	os.MkdirAll(out, 0o700)
-	src := filepath.Join(dir, "source.pdf")
-	set := func(fn func(j *Job)) {
-		jobsMu.Lock()
-		fn(job)
-		jobsMu.Unlock()
-	}
+// readPDF has Audiveris read src into out, and returns the MusicXML files
+// and the pages that had no readable music.
+func readPDF(job *Job, aud, dir, src, out string, set func(func(j *Job))) ([]string, []int, error) {
 	err := runAudiveris(job, aud, dir, []string{"-batch", "-export", "-output", out, "--", src}, set)
 	files := mxlFiles(out)
 
@@ -680,9 +711,9 @@ func runOMR(job *Job, meta *ScoreMeta, aud string) {
 	jobsMu.Unlock()
 	sort.Ints(failed)
 
-	// A page without readable music (a title page, notes, a blank page)
-	// stops Audiveris from exporting anything. Export again from its saved
-	// work without those pages.
+	// A page without readable music (a title page, notes, a blank page), or
+	// one Audiveris fails on, stops it from exporting anything. Export again
+	// from its saved work without those pages.
 	if len(files) == 0 && len(failed) > 0 && pages > len(failed) {
 		books, _ := filepath.Glob(filepath.Join(out, "*.omr"))
 		if len(books) > 0 {
@@ -699,6 +730,62 @@ func runOMR(job *Job, meta *ScoreMeta, aud string) {
 			files = mxlFiles(out)
 		}
 	}
+	return files, failed, err
+}
+
+// readCommand is "score2audio --read FILE.pdf OUTDIR": reads a PDF exactly as
+// the program does and leaves Audiveris's MusicXML and log in OUTDIR, for
+// testing and for looking into a score that reads badly.
+func readCommand(src, out string) int {
+	aud := findAudiveris()
+	if aud == "" {
+		fmt.Println("Audiveris was not found. Set AUDIVERIS_EXE to its full path.")
+		return 1
+	}
+	src, _ = filepath.Abs(src)
+	out, _ = filepath.Abs(out)
+	if err := os.MkdirAll(out, 0o700); err != nil {
+		fmt.Println(err)
+		return 1
+	}
+	job := &Job{ID: "cli", State: "running", Started: time.Now()}
+	set := func(fn func(j *Job)) {
+		jobsMu.Lock()
+		fn(job)
+		jobsMu.Unlock()
+	}
+	files, failed, err := readPDF(job, aud, out, src, out, set)
+	os.WriteFile(filepath.Join(out, "audiveris-log.txt"), []byte(strings.Join(job.LogLines, "\n")), 0o600)
+	if len(failed) > 0 {
+		fmt.Println("pages without readable music:", failed)
+		var ps []string
+		for _, p := range failed {
+			ps = append(ps, strconv.Itoa(p))
+		}
+		os.WriteFile(filepath.Join(out, "skipped-pages.txt"), []byte(strings.Join(ps, " ")+"\n"), 0o600)
+	}
+	if len(files) == 0 {
+		fmt.Println("Audiveris could not read music from this PDF:", err)
+		return 1
+	}
+	for _, f := range files {
+		fmt.Println(f)
+	}
+	return 0
+}
+
+func runOMR(job *Job, meta *ScoreMeta, aud string) {
+	dir := scoreDir(meta.ID)
+	out := filepath.Join(dir, "omr")
+	os.RemoveAll(out)
+	os.MkdirAll(out, 0o700)
+	src := filepath.Join(dir, "source.pdf")
+	set := func(fn func(j *Job)) {
+		jobsMu.Lock()
+		fn(job)
+		jobsMu.Unlock()
+	}
+	files, failed, err := readPDF(job, aud, dir, src, out, set)
 	logPath := filepath.Join(dir, "audiveris-log.txt")
 	jobsMu.Lock()
 	logText := fmt.Sprintf("score2audio %s on %s/%s\nAudiveris: %s\nLyrics data: %s\n\n%s\n", appVersion, runtime.GOOS, runtime.GOARCH, aud, tessdataDir(), strings.Join(job.LogLines, "\n"))

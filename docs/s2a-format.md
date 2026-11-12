@@ -38,7 +38,7 @@ All times are in quarter notes from the start of the score, ignoring repeats. Me
 - `order` – the measures to play, as indexes into `measures`, with repeats and first and second endings expanded.
 - `hasRepeats` – whether `order` differs from playing straight through.
 - `tempo` – tempo changes: `t` and `bpm` (quarter notes per minute). The first entry is at 0.
-- `tempoFromScore` – false when no tempo marking could be read (the first tempo is then 90).
+- `tempoFromScore` – true when the tempo comes from a printed metronome mark (from model version 8 this includes marks score2audio read from the page image itself, since Audiveris leaves them out of its MusicXML). When false, the first tempo is a usual one: for the tempo word in `tempoWord` if there is one (from model version 8, for example `"Andante"`), otherwise for the meter (90 quarter notes, 72 half notes in 2/2 or 4/2, 60 dotted quarters in 6/8).
 - `lines` – the lines a user can choose, each with:
   - `id` – stable within the score, for example `p2s1l` (part 2, staff 1, lower notes).
   - `name`, and `hint` such as "usually bass" (optional).

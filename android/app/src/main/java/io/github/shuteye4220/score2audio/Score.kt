@@ -94,6 +94,8 @@ class Score(
     val lines: List<Line>,
     val verses: List<Verse>,
     val warnings: List<String>,
+    /** The tempo word the starting tempo came from ("Andante"), or "". */
+    val tempoWord: String = "",
 ) {
     val opts = Options()
 
@@ -323,7 +325,8 @@ class Score(
             val warnings = m.optJSONArray("warnings")?.let { a -> (0 until a.length()).map { a.getString(it).take(1000) } }.orEmpty().take(50)
             val title = root.optString("title").ifBlank { m.optString("title", "Score") }.take(200)
             val score = Score(id, title, root.optString("sourceFile"), measures, order, m.optBoolean("hasRepeats"),
-                tempo, m.optBoolean("tempoFromScore"), lines, verses, warnings)
+                tempo, m.optBoolean("tempoFromScore"), lines, verses, warnings,
+                m.optString("tempoWord").filter { it.isLetter() || it == ' ' || it == '\'' }.trim().take(40))
             score.applyPrefs(root.optJSONObject("prefs"))
             return score
         }

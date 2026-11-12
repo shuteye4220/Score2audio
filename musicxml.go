@@ -20,7 +20,7 @@ import (
 	"unicode"
 )
 
-const modelVersion = 7
+const modelVersion = 8
 
 // ---------- raw XML structures ----------
 
@@ -110,7 +110,8 @@ type xSound struct {
 }
 
 type xDirection struct {
-	Sound      *xSound `xml:"sound"`
+	Sound      *xSound  `xml:"sound"`
+	Words      []string `xml:"direction-type>words"`
 	Metronomes []struct {
 		BeatUnit  string     `xml:"beat-unit"`
 		Dots      []struct{} `xml:"beat-unit-dot"`
@@ -280,6 +281,7 @@ type Model struct {
 	HasRepeats     bool          `json:"hasRepeats"`
 	Tempo          []TempoPoint  `json:"tempo"`
 	TempoFromScore bool          `json:"tempoFromScore"`
+	TempoWord      string        `json:"tempoWord,omitempty"` // the tempo came from this word (no number printed)
 	Lines          []Line        `json:"lines"`
 	Verses         []Verse       `json:"verses"`
 	Warnings       []string      `json:"warnings"`
@@ -379,6 +381,13 @@ func parseScoreFile(p string) (*xScore, error) {
 // LoadModel parses one or more MusicXML files (Audiveris may split a score
 // into movements) and joins them end to end.
 func LoadModel(files []string, fallbackTitle string) (*Model, error) {
+	return loadModel(files, fallbackTitle, nil)
+}
+
+// loadModel is LoadModel that also reads tempo marks from Audiveris's
+// project file, when one is next to the MusicXML (skipped: the pages left
+// out of the export).
+func loadModel(files []string, fallbackTitle string, skipped []int) (*Model, error) {
 	var scores []*xScore
 	for _, f := range files {
 		s, err := parseScoreFile(f)
@@ -399,7 +408,13 @@ func LoadModel(files []string, fallbackTitle string) (*Model, error) {
 		}
 	}
 	mergeSplitParts(main)
-	m := buildModel(main, fallbackTitle)
+	var marks []omrTempo
+	if len(files) > 0 {
+		if books, _ := filepath.Glob(filepath.Join(filepath.Dir(files[0]), "*.omr")); len(books) == 1 {
+			marks = readOMRTempos(books[0], skipped)
+		}
+	}
+	m := buildModel(main, fallbackTitle, marks)
 	m.Warnings = append(append([]string{}, warnings...), m.Warnings...)
 	if err := sanitizeModel(m); err != nil {
 		return nil, err
@@ -435,6 +450,8 @@ type restKey struct{ part, staff, mi int }
 type measureFacts struct {
 	beats, beatType int
 	maxLen          float64
+	voiceLens       []float64 // how long each voice's music lasts, in quarter notes
+	hasTime         bool      // a time signature is printed (read) in this measure
 	implicit        bool
 	newSystem       bool
 	repeatFwd       bool
@@ -442,6 +459,8 @@ type measureFacts struct {
 	endings         string
 	endingType      string
 	tempos          []TempoPoint // t = offset within measure
+	tempoWord       string       // a tempo word such as "Andante"
+	tempoBPM        float64      // its usual beats per minute
 }
 
 var stepSemis = map[string]int{"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
@@ -476,7 +495,7 @@ func parseBeats(s string) int {
 	return total
 }
 
-func buildModel(s *xScore, fallbackTitle string) *Model {
+func buildModel(s *xScore, fallbackTitle string, marks []omrTempo) *Model {
 	m := &Model{Version: modelVersion}
 	m.Title = strings.TrimSpace(s.Work.Title)
 	if m.Title == "" {
@@ -521,6 +540,7 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 		for mi, meas := range p.Measures {
 			f := &facts[mi]
 			cursor, maxCursor, lastOnset := 0.0, 0.0, 0.0
+			voiceEnd := map[string]float64{}
 			if strings.EqualFold(meas.Implicit, "yes") {
 				f.implicit = true
 			}
@@ -531,6 +551,7 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 						div = x.Divisions
 					}
 					if len(x.Times) > 0 {
+						f.hasTime = true
 						if b := parseBeats(x.Times[0].Beats); b > 0 {
 							beats = b
 						}
@@ -580,6 +601,12 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 					voice := x.Voice
 					if voice == "" {
 						voice = "1"
+					}
+					if x.Chord == nil {
+						vk := strconv.Itoa(staff) + "/" + voice
+						if e := cursor / div; e > voiceEnd[vk] {
+							voiceEnd[vk] = e
+						}
 					}
 					if x.Rest != nil || x.Pitch == nil {
 						rk := restKey{pi, staff, mi}
@@ -638,19 +665,33 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 						maxCursor = cursor
 					}
 				case *xDirection:
-					if x.Sound != nil && x.Sound.Tempo != "" {
-						if bpm, err := strconv.ParseFloat(x.Sound.Tempo, 64); err == nil && bpm > 0 {
-							f.tempos = append(f.tempos, TempoPoint{T: cursor / div, BPM: bpm})
-						}
-					} else {
-						for _, mt := range x.Metronomes {
-							if bpm := metronomeToQuarter(mt.BeatUnit, len(mt.Dots), mt.PerMinute); bpm > 0 {
-								f.tempos = append(f.tempos, TempoPoint{T: cursor / div, BPM: bpm})
-							}
+					for _, w := range x.Words {
+						if f.tempoWord == "" {
+							f.tempoWord, f.tempoBPM = matchTempoWord(w)
 						}
 					}
+					// the printed mark decides; its <sound> only stands in
+					// for a mark whose number is not a plain number ("c. 72")
+					bpm, misread := 0.0, false
+					for _, mt := range x.Metronomes {
+						if b := metronomeToQuarter(mt.BeatUnit, len(mt.Dots), mt.PerMinute); b > 0 {
+							bpm = b
+							break
+						}
+						if _, err := strconv.ParseFloat(strings.TrimSpace(mt.PerMinute), 64); err == nil {
+							misread = true // whole = 4 and the like
+						}
+					}
+					if bpm == 0 && !misread && x.Sound != nil && x.Sound.Tempo != "" {
+						if b, err := strconv.ParseFloat(x.Sound.Tempo, 64); err == nil && plausibleTempo(b) {
+							bpm = b
+						}
+					}
+					if bpm > 0 {
+						f.tempos = append(f.tempos, TempoPoint{T: cursor / div, BPM: bpm})
+					}
 				case *xSound:
-					if bpm, err := strconv.ParseFloat(x.Tempo, 64); err == nil && bpm > 0 {
+					if bpm, err := strconv.ParseFloat(x.Tempo, 64); err == nil && plausibleTempo(bpm) {
 						f.tempos = append(f.tempos, TempoPoint{T: cursor / div, BPM: bpm})
 					}
 				case *xBarline:
@@ -684,50 +725,40 @@ func buildModel(s *xScore, fallbackTitle string) *Model {
 			if l := maxCursor / div; l > f.maxLen {
 				f.maxLen = l
 			}
+			for _, e := range voiceEnd {
+				if e > 0 {
+					f.voiceLens = append(f.voiceLens, e)
+				}
+			}
 		}
 	}
 
-	// measure timeline
+	// measure timeline: the time signatures, corrected by the music itself
+	// where Audiveris missed or misread them
+	shapes := inferMeasures(facts)
+	inferred := 0
 	t := 0.0
 	for i := range facts {
-		f := &facts[i]
-		nominal := float64(f.beats) * 4 / float64(f.beatType)
-		length := nominal
-		if (f.implicit || i == 0) && f.maxLen > 0 && f.maxLen < nominal-0.01 {
-			length = f.maxLen // pickup measure
-		}
+		sh := shapes[i]
 		num := strconv.Itoa(i + 1)
 		if i < len(s.Parts[0].Measures) && s.Parts[0].Measures[i].Number != "" {
 			num = s.Parts[0].Measures[i].Number
 		}
-		m.Measures = append(m.Measures, MeasureInfo{Number: num, T: t, D: length, Beats: f.beats, BeatType: f.beatType, NewSystem: f.newSystem || i == 0,
-			Fifths: keyAt(keys, partHasTranspose, i)})
-		t += length
+		if sh.meterChanged {
+			inferred++
+		}
+		m.Measures = append(m.Measures, MeasureInfo{Number: num, T: t, D: sh.length, Beats: sh.beats, BeatType: sh.beatType,
+			NewSystem: facts[i].newSystem || i == 0, Fifths: keyAt(keys, partHasTranspose, i)})
+		t += sh.length
+	}
+	if inferred > 0 {
+		m.Warnings = append(m.Warnings, fmt.Sprintf("In %d measures the printed time signature did not match the notes, so their length was taken from the notes.", inferred))
 	}
 	for _, n := range notes {
 		n.t = m.Measures[n.mi].T + n.on
 	}
 
-	// tempo
-	seen := map[float64]bool{}
-	for i, f := range facts {
-		for _, tp := range f.tempos {
-			at := math.Round((m.Measures[i].T+tp.T)*1000) / 1000
-			if !seen[at] {
-				seen[at] = true
-				m.Tempo = append(m.Tempo, TempoPoint{T: at, BPM: tp.BPM})
-			}
-		}
-	}
-	sort.Slice(m.Tempo, func(a, b int) bool { return m.Tempo[a].T < m.Tempo[b].T })
-	m.TempoFromScore = len(m.Tempo) > 0
-	if len(m.Tempo) == 0 || m.Tempo[0].T > 0 {
-		first := 90.0
-		if len(m.Tempo) > 0 {
-			first = m.Tempo[0].BPM
-		}
-		m.Tempo = append([]TempoPoint{{T: 0, BPM: first}}, m.Tempo...)
-	}
+	setTempo(m, facts, marks)
 
 	m.Order, m.HasRepeats = performanceOrder(facts)
 	markRepeats(m, facts)
@@ -982,8 +1013,8 @@ func clefDescription(sign string, line, octave int) string {
 
 func metronomeToQuarter(unit string, dots int, perMinute string) float64 {
 	pm, err := strconv.ParseFloat(strings.TrimSpace(perMinute), 64)
-	if err != nil || pm <= 0 {
-		return 0
+	if err != nil || pm < 20 || pm > 320 {
+		return 0 // not a tempo anyone prints: a misread mark
 	}
 	q := map[string]float64{"whole": 4, "half": 2, "quarter": 1, "eighth": 0.5, "16th": 0.25}[unit]
 	if q == 0 {
@@ -992,8 +1023,15 @@ func metronomeToQuarter(unit string, dots int, perMinute string) float64 {
 	if dots > 0 {
 		q *= 1.5
 	}
+	if !plausibleTempo(pm * q) {
+		return 0
+	}
 	return pm * q
 }
+
+// plausibleTempo tells whether a tempo, in quarter notes per minute, could
+// be meant: Audiveris now and then makes a tempo out of a misread symbol.
+func plausibleTempo(qbpm float64) bool { return qbpm >= 15 && qbpm <= 600 }
 
 func mostCommon(m map[string]int) string {
 	best, bn := "", -1

@@ -593,7 +593,9 @@
     $('tempo').value = opts.tempo;
     $('tempo-help').textContent = `One beat is a ${beatName(beatQn0)}. ` + (M.tempoFromScore
       ? `The score asks for ${scoreTempo} beats per minute.`
-      : `The score has no tempo marking that could be read, so ${Math.round(90 / beatQn0)} is used to start with.`);
+      : M.tempoWord
+        ? `The score is marked “${M.tempoWord}” without a number, so ${scoreTempo}, a usual tempo for that, is used to start with.`
+        : `The score has no tempo marking that could be read, so ${scoreTempo}, a usual tempo for this time signature, is used to start with.`);
     for (const id of ['from', 'to']) { $(id).min = first.n; $(id).max = lastNumber(); }
     $('from').value = opts.from; $('to').value = opts.to;
     $('loop').checked = opts.loop; $('countin').checked = opts.countIn; $('metronome').checked = opts.metronome;
@@ -721,8 +723,38 @@
       sel.addEventListener('change', () => { opts.verse = +sel.value; savePrefs(); renderLyricLines(); });
       box.append(el('div', { class: 'field' }, el('label', { for: 'verse', text: 'Lyric line to show' }), sel));
     }
+    const save = el('button', { type: 'button', text: 'Save lyrics as text', 'aria-describedby': 'lyrics-save-help' });
+    save.addEventListener('click', saveLyricsText);
+    box.append(el('div', { class: 'btnrow' }, save),
+      el('p', { class: 'help', id: 'lyrics-save-help', text: 'Saves a plain text file of all the lyrics found: each verse in turn, one line of music per line, with the measure numbers.' }));
     box.append(el('ol', { class: 'lyric-lines', id: 'lyric-list' }));
     renderLyricLines();
+  }
+
+  // The lyrics as plain text: the title, then each verse, one printed line
+  // of music per line. Windows line endings, so every text editor shows the
+  // lines.
+  function lyricsText() {
+    const out = [score.meta.title, ''];
+    for (const v of M.verses) {
+      if (M.verses.length > 1) out.push(v.name, '');
+      for (const ln of v.lines) {
+        const a = M.measures[ln.from].n, b = M.measures[ln.to].n;
+        out.push(`${ln.text}    (${a === b ? `measure ${a}` : `measures ${a} to ${b}`})`);
+      }
+      out.push('');
+    }
+    out.push('Lyrics read automatically from the printed score by score2audio; some words may be missing or misspelled.');
+    return out.join('\r\n') + '\r\n';
+  }
+
+  function saveLyricsText() {
+    const name = `${score.meta.title} - lyrics.txt`.replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, ' ');
+    const blob = new Blob(['\ufeff' + lyricsText()], { type: 'text/plain;charset=utf-8' });
+    const a = el('a', { href: URL.createObjectURL(blob), download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+    setStatus(`Your browser has saved the lyrics as "${name}", usually in your Downloads folder.`);
   }
 
   function renderLyricLines() {

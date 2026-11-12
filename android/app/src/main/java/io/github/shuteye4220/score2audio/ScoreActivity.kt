@@ -99,8 +99,11 @@ class ScoreActivity : Activity() {
         tempoField = ui.field("Tempo, in beats per minute", o.tempo.toString(), true) { setTempo(it) }
         ui.text(
             "One beat is a ${score.beatName(score.beatQn0)}. " +
-                if (score.tempoFromScore) "The score asks for ${score.scoreTempo} beats per minute."
-                else "The score has no tempo marking that could be read."
+                when {
+                    score.tempoFromScore -> "The score asks for ${score.scoreTempo} beats per minute."
+                    score.tempoWord.isNotEmpty() -> "The score is marked \"${score.tempoWord}\" without a number, so ${score.scoreTempo}, a usual tempo for that, is used to start with."
+                    else -> "The score has no tempo marking that could be read, so ${score.scoreTempo}, a usual tempo for this time signature, is used to start with."
+                }
         )
         fromField = ui.field("From measure", o.from, true) { setMeasure(it, true) }
         toField = ui.field("To measure", o.to, true) { setMeasure(it, false) }

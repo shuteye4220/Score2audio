@@ -83,6 +83,7 @@ func sanitizeModel(m *Model) error {
 		return errNoMeasures
 	}
 	m.Title = cut(m.Title, maxShortText)
+	m.TempoWord = cut(m.TempoWord, 40)
 
 	if len(m.Measures) > maxMeasures {
 		m.Measures = m.Measures[:maxMeasures]
