@@ -78,12 +78,16 @@ var (
 	updateBusy  bool
 )
 
+// versionRe is a release ("1.2.3"); appVersionRe also takes a test build
+// for one ("1.2.3-rc1"), which updates to that release when it is out.
 var versionRe = regexp.MustCompile(`^(\d{1,4})\.(\d{1,4})\.(\d{1,6})$`)
+var appVersionRe = regexp.MustCompile(`^(\d{1,4})\.(\d{1,4})\.(\d{1,6})(?:-rc\.?(\d{1,4}))?$`)
 var updateNameRe = regexp.MustCompile(`^score2audio-[A-Za-z0-9._-]{1,80}$`)
 
-// newerVersion tells whether version a is newer than b (both "1.2.3").
+// newerVersion tells whether version a is newer than b ("1.2.3", or
+// "1.2.3-rc1", which comes before 1.2.3).
 func newerVersion(a, b string) bool {
-	ma, mb := versionRe.FindStringSubmatch(a), versionRe.FindStringSubmatch(b)
+	ma, mb := appVersionRe.FindStringSubmatch(a), appVersionRe.FindStringSubmatch(b)
 	if ma == nil || mb == nil {
 		return false
 	}
@@ -93,6 +97,15 @@ func newerVersion(a, b string) bool {
 		if x != y {
 			return x > y
 		}
+	}
+	// same numbers: a release is newer than its test builds
+	switch {
+	case ma[4] == "" && mb[4] != "":
+		return true
+	case ma[4] != "" && mb[4] != "":
+		x, _ := strconv.Atoi(ma[4])
+		y, _ := strconv.Atoi(mb[4])
+		return x > y
 	}
 	return false
 }
@@ -118,7 +131,7 @@ func updateKind() (key string, installer bool) {
 
 // selfUpdatable tells whether this copy's files can be replaced, and if not why.
 func selfUpdatable() (bool, string) {
-	if !versionRe.MatchString(appVersion) {
+	if !appVersionRe.MatchString(appVersion) {
 		return false, "This is a test build of score2audio, which is not updated automatically."
 	}
 	if _, inst := updateKind(); inst {
@@ -543,7 +556,7 @@ func startupUpdate() {
 			updateMu.Unlock()
 		}
 	}
-	if time.Since(s.LastUpdateCheck) < 20*time.Hour || !versionRe.MatchString(appVersion) {
+	if time.Since(s.LastUpdateCheck) < 20*time.Hour || !appVersionRe.MatchString(appVersion) {
 		return
 	}
 	go func() {
