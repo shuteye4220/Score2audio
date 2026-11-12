@@ -31,9 +31,11 @@
       <button type="button" id="btn-stop">Stop</button>
       <button type="button" id="btn-pitches">Give starting notes</button>
       <button type="button" id="btn-wav" aria-describedby="wav-help">Save as audio file</button>
+      <span id="audio-format-wrap" hidden><label for="audio-format">Audio file type</label>
+        <select id="audio-format"><option value="wav">WAV</option><option value="mp3">MP3 (smaller)</option></select></span>
       <button type="button" id="btn-video" aria-describedby="video-help">Save as video</button>
     </div>
-    <p class="help" id="wav-help">Save as audio file makes a WAV file of the chosen lines, measures, tempo, volumes and sounds, for a phone or other player.</p>
+    <p class="help" id="wav-help">Save as audio file makes a WAV file (or, with FFmpeg installed, an MP3 file) of the chosen lines, measures, tempo, volumes and sounds, for a phone or other player.</p>
     <p class="help" id="video-help">Save as video makes an MP4 video to share: the chosen lines as sheet music that scrolls with the playing, the current measure highlighted, the lyrics underneath, and the same sound as the audio file. Rename a line under More settings to change what the video calls it.</p>
     <div id="video-progress" hidden>
       <label for="video-bar">Making the video</label>
@@ -143,8 +145,21 @@
 <section id="setup" aria-labelledby="h-setup" class="card">
   <h2 id="h-setup">Setup</h2>
   <p id="engine-status">Checking for the music reading program&hellip;</p>
+  <p id="ffmpeg-status" class="help"></p>
+  <div id="helpers" hidden>
+    <button type="button" id="btn-helpers" aria-describedby="helpers-help">Install the helper programs for me</button>
+    <p id="helpers-help" class="help">Downloads the free programs score2audio uses from their publishers, checks each download, and installs it: Audiveris, which reads the music in PDF files, and FFmpeg, for MP3 files and video sound. About 200 MB.</p>
+    <p id="helpers-linux" class="help" hidden>On Linux, the helper programs come from your distribution's packages. In a terminal, run <code>score2audio --setup</code> (or <code>./setup.sh</code> in score2audio's folder); it asks before running anything that needs your password.</p>
+    <div id="helpers-progress" hidden>
+      <p id="helpers-now" role="status"></p>
+      <details>
+        <summary>All the setup steps</summary>
+        <ol id="helpers-log" class="log"></ol>
+      </details>
+    </div>
+  </div>
   <div id="engine-help" hidden>
-    <p>score2audio uses the free program Audiveris to read music from PDF files. To install it:</p>
+    <p>score2audio uses the free program Audiveris to read music from PDF files. To install it yourself:</p>
     <ol>
       <li>Open the <a href="https://github.com/Audiveris/audiveris/releases" target="_blank" rel="noopener">Audiveris downloads page (opens in a new tab)</a>.</li>
       <li data-os="windows">Under the newest release, download the file ending in <strong>windowsConsole-x86_64.msi</strong>, and run it.</li>
@@ -164,6 +179,23 @@
     <button type="button" id="btn-recheck">Check again</button>
   </form>
   <p id="ocr-status" class="help"></p>
+
+  <h3 id="h-updates">Updates</h3>
+  <p id="update-status">Checking&hellip;</p>
+  <div id="update-actions" hidden>
+    <button type="button" id="btn-update-now">Update now</button>
+    <a id="update-notes" href="#" target="_blank" rel="noopener">What is new in this version (opens in a new tab)</a>
+  </div>
+  <div class="field">
+    <label for="update-mode">When a new version of score2audio comes out</label>
+    <select id="update-mode" aria-describedby="update-mode-help">
+      <option value="auto">Install it automatically</option>
+      <option value="ask">Tell me, and install it when I choose</option>
+      <option value="off">Do not check for new versions</option>
+    </select>
+    <p id="update-mode-help" class="help">score2audio checks once a day, only with this project's page on GitHub, and installs a new version only if it carries the project's signature. An automatic update is installed the next time score2audio starts.</p>
+  </div>
+  <button type="button" id="btn-update-check">Check for a new version now</button>
 </section>
 
 </main>

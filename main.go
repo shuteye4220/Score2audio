@@ -44,7 +44,9 @@ var (
 )
 
 type Settings struct {
-	AudiverisPath string `json:"audiverisPath"`
+	AudiverisPath   string    `json:"audiverisPath"`
+	UpdateMode      string    `json:"updateMode,omitempty"` // auto (or empty) | ask | off
+	LastUpdateCheck time.Time `json:"lastUpdateCheck,omitempty"`
 }
 
 type Job struct {
@@ -79,6 +81,14 @@ func main() {
 		dataDir = os.TempDir()
 		os.Exit(readCommand(os.Args[2], os.Args[3]))
 	}
+	if len(os.Args) >= 2 && os.Args[1] == "--setup" {
+		dataDir = defaultDataDir()
+		if v := os.Getenv("SCORE2AUDIO_DATA"); v != "" {
+			dataDir = v
+		}
+		os.MkdirAll(dataDir, 0o700)
+		os.Exit(setupCommand(len(os.Args) == 3 && os.Args[2] == "--yes"))
+	}
 	if len(os.Args) > 2 && os.Args[1] == "--dump" {
 		// pages "--read" left out, so the tempo marks line up
 		var skipped []int
@@ -107,6 +117,7 @@ func main() {
 	// users cannot read it). Older versions made it readable by everyone.
 	os.MkdirAll(filepath.Join(dataDir, "scores"), 0o700)
 	os.Chmod(dataDir, 0o700)
+	startupUpdate()
 
 	b := make([]byte, 16)
 	rand.Read(b)
@@ -390,17 +401,34 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 			"audiveris":      aud,
 			"tessdata":       tessdataDir() != "",
 			"video":          verovioFile() != "",
+			"ffmpeg":         findFFmpeg() != "",
 			"os":             runtime.GOOS,
 			"savedAudiveris": loadSettings().AudiverisPath,
+			"update":         currentUpdateInfo(),
+			"updatedTo":      os.Getenv("SCORE2AUDIO_UPDATED"),
 		})
+	case parts[0] == "setup" && r.Method == http.MethodPost:
+		if err := startSetupFromPage(); err != nil {
+			httpErr(w, 400, err.Error())
+			return
+		}
+		writeJSON(w, setupProgress())
+	case parts[0] == "setup" && r.Method == http.MethodGet:
+		writeJSON(w, setupProgress())
+	case parts[0] == "convert" && r.Method == http.MethodPost:
+		handleConvert(w, r)
+	case parts[0] == "update" && len(parts) == 2 && r.Method == http.MethodPost:
+		handleUpdate(w, r, parts[1])
 	case parts[0] == "settings" && r.Method == http.MethodPost:
-		var s Settings
-		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&s); err != nil {
+		var in Settings
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&in); err != nil {
 			httpErr(w, 400, "Could not read the settings.")
 			return
 		}
-		if strings.TrimSpace(s.AudiverisPath) != "" {
-			p := resolveAudiveris(s.AudiverisPath)
+		s := loadSettings()
+		s.AudiverisPath = ""
+		if strings.TrimSpace(in.AudiverisPath) != "" {
+			p := resolveAudiveris(in.AudiverisPath)
 			if p == "" {
 				httpErr(w, 400, "No Audiveris program was found at that location. Enter the full path of Audiveris.exe or of the folder that contains it.")
 				return

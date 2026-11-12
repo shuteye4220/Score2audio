@@ -4,7 +4,7 @@
 #   make            build for this computer
 #   make test       run the tests
 #   make run        build and start it
-#   make dist       build download packages for Windows, Mac and Linux
+#   make dist       build download packages for Windows (zip and installer), Mac and Linux
 #   make install    install for this user on Linux (into ~/.local)
 
 VERSION ?= $(or $(shell git describe --tags --always 2>/dev/null | sed "s/^v//"),dev)
@@ -70,24 +70,30 @@ dist: test tessdata verovio
 	cp -r verovio build/windows/verovio
 	cp README.md build/windows/README.txt && cp LICENSE build/windows/LICENSE.txt
 	cd build/windows && zip -qr ../../dist/score2audio-windows.zip .
+	# the Windows installer (needs NSIS: sudo apt install nsis, or pacman -S nsis)
+	@if command -v makensis >/dev/null; then \
+	  makensis -V2 -DVERSION=$(VERSION) -DSRC=$(CURDIR)/build/windows -DOUTFILE=$(CURDIR)/dist/score2audio-windows-setup.exe packaging/windows/installer.nsi; \
+	else echo "makensis (NSIS) is not installed: the Windows installer was not built."; fi
 	# Mac: one program for both Apple silicon and Intel
 	mkdir -p build/mac/score2audio/tessdata
 	GOOS=darwin GOARCH=arm64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o build/score2audio-mac-arm64 .
 	GOOS=darwin GOARCH=amd64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o build/score2audio-mac-amd64 .
 	$(GO) run ./tools/makefat build/mac/score2audio/score2audio build/score2audio-mac-arm64 build/score2audio-mac-amd64
-	cp packaging/mac/start-score2audio.command build/mac/score2audio/
-	chmod +x build/mac/score2audio/score2audio build/mac/score2audio/start-score2audio.command
+	cp packaging/mac/start-score2audio.command "packaging/mac/Install helpers.command" build/mac/score2audio/
+	chmod +x build/mac/score2audio/score2audio build/mac/score2audio/*.command
 	cp tessdata/eng.traineddata build/mac/score2audio/tessdata/
 	cp -r verovio build/mac/score2audio/verovio
 	cp README.md LICENSE build/mac/score2audio/
 	cd build/mac && zip -qry ../../dist/score2audio-mac.zip score2audio
-	# Linux
-	mkdir -p build/linux/score2audio/tessdata
-	GOOS=linux GOARCH=amd64 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o build/linux/score2audio/score2audio .
-	cp tessdata/eng.traineddata build/linux/score2audio/tessdata/
-	cp -r verovio build/linux/score2audio/verovio
-	cp README.md LICENSE packaging/linux/score2audio.desktop build/linux/score2audio/
-	cd build/linux && tar czf ../../dist/score2audio-linux-x86_64.tar.gz score2audio
+	# Linux, for PCs (x86_64) and for ARM computers such as the Raspberry Pi 4 and 5 (arm64)
+	for arch in x86_64:amd64 arm64:arm64; do \
+	  name=$${arch%%:*}; goarch=$${arch##*:}; d=build/linux-$$name/score2audio; \
+	  mkdir -p $$d/tessdata && \
+	  GOOS=linux GOARCH=$$goarch $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o $$d/score2audio . && \
+	  cp tessdata/eng.traineddata $$d/tessdata/ && cp -r verovio $$d/verovio && \
+	  cp README.md LICENSE packaging/linux/score2audio.desktop packaging/linux/setup.sh $$d/ && \
+	  (cd build/linux-$$name && tar czf ../../dist/score2audio-linux-$$name.tar.gz score2audio) || exit 1; \
+	done
 	@ls -l dist
 
 install: build tessdata verovio

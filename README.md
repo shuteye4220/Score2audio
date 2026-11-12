@@ -16,41 +16,52 @@ score2audio runs on Windows, macOS and Linux, and scores it has read can be play
 - Transposing instruments are played at sounding pitch: a part labelled "Clarinet in B♭" automatically sounds a whole step lower than written, "Horn in F" a fifth lower, and so on. Each line's Pitch setting can change this, or move a line up or down by octaves.
 - Set the tempo, play a range of measures, repeat a passage until you stop it, count in a measure, and add metronome clicks.
 - Hear the starting notes of the chosen lines, lowest first, then together.
-- Read the lyrics, line by line as they appear on the page, with a "Play from measure" button for each line.
+- Read the lyrics, line by line as they appear on the page, with a "Play from measure" button for each line, and save them all as a plain text file with "Save lyrics as text".
 - Read the notes of any line as a table, one row per measure (for example "F 3, half; E flat 3, quarter"), and play any single measure.
-- Save the chosen lines as a WAV audio file to practise on a phone or other player, with the "Save as audio file" button next to Play.
+- Save the chosen lines as a WAV audio file (or an MP3 file, when FFmpeg is installed) to practise on a phone or other player, with the "Save as audio file" button next to Play.
 - Save the chosen lines as an MP4 video to send to others, with "Save as video": the lines as sheet music that scrolls with the playing, the current measure highlighted, the words under the notes and in large type underneath, and the same sound as the audio file. Choose only the alto line, for example, and the video shows and plays the alto part through the whole piece (or the measures chosen). Nothing else needs installing: the video is made by your web browser. See "Videos" below.
 - Export a score that has been read as a score2audio score file (`.s2a`), with "Export for mobile". It holds the recognised music and your line choices, so it plays on the score2audio mobile app, or on another computer, without reading the PDF again. Anyone you share it with does not need Audiveris.
 - Keep a library of the scores you have opened, so each PDF only needs to be read once. Each score remembers your line, volume and tempo choices.
+- Keep score2audio up to date by itself: new versions are installed automatically (or, if you prefer, when you choose). See "Updates" below.
 
 ## Installing
 
-score2audio needs Audiveris, a free program that reads music from PDF files. Install it first, from https://github.com/Audiveris/audiveris/releases (under the newest release, choose the file for your system as described below). MusicXML files can be opened without it.
+score2audio uses two free programs: Audiveris, which reads the music in PDF files (MusicXML files can be opened without it), and, optionally, FFmpeg, for MP3 files and for video sound that plays everywhere. The Windows installer installs both for you, and on Mac and Linux score2audio's setup does. Each download comes from its publisher and is checked against its known fingerprint (SHA-256) before it is used.
 
-Then download score2audio for your system from the Releases page of this project.
+Download score2audio for your system from the Releases page of this project.
 
 ### Windows
 
-1. Install Audiveris: download the file whose name ends in `windowsConsole-x86_64.msi` and run it. The default choices are fine.
-2. Download `score2audio-windows.zip` and unzip it into a folder of your choice. Keep the `tessdata` and `verovio` folders next to `score2audio.exe`; they are used to read lyrics and to make videos.
-3. Start `score2audio.exe`. A small console window opens and your web browser opens the score2audio page. If the browser does not open, the console window shows the address to open.
+1. Download `score2audio-windows-setup.exe` and run it. It installs score2audio for you only, so it does not need an administrator, and puts it in the Start menu and in Apps in Settings.
+2. Leave "Audiveris and FFmpeg" checked on the Components page, and the installer downloads and installs them (about 200 MB). Windows asks whether to allow the Audiveris installer to make changes; answer Yes. Each step is listed on the installer's progress page.
+3. Start score2audio from the Start menu. A small console window opens and your web browser opens the score2audio page. If the browser does not open, the console window shows the address to open.
 
-Windows may warn that the program is from an unknown publisher, because it is not signed. Choose "More info", then "Run anyway".
+Windows may warn that the installer is from an unknown publisher, because it is not signed. Choose "More info", then "Run anyway".
+
+To uninstall, use Apps in Settings (or Add or remove programs). Your scores are kept.
+
+If you would rather not install anything, `score2audio-windows.zip` has the same program: unzip it, keep the `tessdata` and `verovio` folders next to `score2audio.exe`, and start `score2audio.exe`. Its Setup section has a button that installs Audiveris and FFmpeg.
 
 ### Mac
 
-1. Install Audiveris: download the file ending in `macosx-arm64.dmg` for a Mac with Apple silicon (M1 or newer), or `macosx-x86_64.dmg` for an Intel Mac. Open it and drag Audiveris to your Applications folder.
-2. Download `score2audio-mac.zip` and unzip it. You get a `score2audio` folder; move it wherever you like.
-3. In that folder, open `start-score2audio.command`. The first time, macOS will say it cannot verify the developer. Choose Done, then open System Settings, Privacy and Security, and near the bottom choose "Open Anyway" next to the message about start-score2audio.command. After that it opens normally.
+1. Download `score2audio-mac.zip` and unzip it. You get a `score2audio` folder; move it wherever you like.
+2. In that folder, open `Install helpers.command`. The first time, macOS will say it cannot verify the developer. Choose Done, then open System Settings, Privacy and Security, and near the bottom choose "Open Anyway" next to the message about it. It downloads Audiveris (for Apple silicon or Intel, whichever your Mac has) and copies it into the Applications folder in your home folder. FFmpeg is installed too if you have Homebrew; it is optional.
+3. Open `start-score2audio.command` (allowing it the same way the first time).
 
-A Terminal window opens and shows score2audio's messages, and your web browser opens the page. The same download works on both Apple silicon and Intel Macs.
+A Terminal window opens and shows score2audio's messages, and your web browser opens the page. The same download works on both Apple silicon and Intel Macs. The Setup section of the page also has a button that installs Audiveris and FFmpeg.
 
 ### Linux
 
-1. Install Audiveris from your distribution (for example the `audiveris` package in the Arch User Repository), from Flathub, or from the `.deb` file on the Audiveris downloads page for Debian and Ubuntu.
-2. Download `score2audio-linux-x86_64.tar.gz`, unpack it, and run `./score2audio` from the `score2audio` folder. Or build it yourself; see Building from source.
+1. Download `score2audio-linux-x86_64.tar.gz` (for PCs) or `score2audio-linux-arm64.tar.gz` (for ARM computers such as a Raspberry Pi 4 or 5 running a 64-bit system), unpack it, and open a terminal in the `score2audio` folder.
+2. Run `./setup.sh` to install Audiveris and FFmpeg. It uses your distribution's own packages where it has them, and says what it will run and asks before anything that needs your password:
+   - Arch Linux and relatives: Audiveris from the AUR with `yay` or `paru` if you have one, FFmpeg with pacman.
+   - Debian and Ubuntu (on PCs): the Audiveris `.deb` for your release, checked, then installed with apt; FFmpeg with apt.
+   - Fedora, openSUSE and others: Audiveris from Flathub if Flatpak is installed; FFmpeg with dnf or zypper.
+3. Run `./score2audio`.
 
-If score2audio cannot find Audiveris, the Setup section of the page explains what to do, and lets you type where Audiveris is installed.
+Audiveris is not published for ARM Linux, so on a Raspberry Pi read your PDFs on another computer, or install Audiveris from Flathub if it is offered there for your system; MusicXML and `.s2a` files open without it.
+
+Or build score2audio yourself; see Building from source. If score2audio cannot find Audiveris, the Setup section of the page explains what to do, and lets you type where Audiveris is installed.
 
 ### Android app (beta)
 
@@ -71,6 +82,18 @@ The app is built only from standard Android controls, one task per screen, so it
 - Read the notes: one item per measure, as text; choosing one plays that measure of the line.
 
 Audio files are saved in the Music/score2audio folder.
+
+## Updates
+
+score2audio checks once a day whether a new version has been released, by asking this project's Releases page on GitHub (nothing about you or your scores is sent). In the Setup section of the page, under Updates, choose what happens when there is one:
+
+- Install it automatically (the first choice): the new version is downloaded in the background and installed the next time you start score2audio.
+- Tell me, and install it when I choose: the Updates section says a new version is available, with an "Update now" button and a link to what is new.
+- Do not check for new versions.
+
+"Check for a new version now" checks straight away. A new version is only installed if the list of its files carries the project's signature, and every file it downloads matches that list, so a changed or tampered download is never installed. A copy installed with the Windows installer is updated by running the new installer, without any questions, after which score2audio starts again by itself; any other copy replaces its own files and starts again. A copy in a folder it cannot change (for example one installed by a package manager) only tells you about the new version.
+
+The Android app does not update itself yet: install the new `score2audio-android.apk` over the old one (your scores are kept).
 
 ## Using it
 
@@ -96,6 +119,8 @@ Scanned photocopies, handwritten music and very crowded scores give poorer resul
 
 Repeat signs with first and second endings are followed. "D.S.", "D.C." and "To Coda" directions are not yet followed; play those sections using the measure range instead. Tempo changes written as words, such as "rit." or "A little slower", are not applied.
 
+Timing: Audiveris sometimes misses or misreads a time signature, especially a change of meter partway through a piece. score2audio then follows the notes: where several measures in a row agree on a different length, that is taken as the new meter, and the page lists how many measures were corrected this way. Printed metronome marks such as "♩ = 72", "𝅗𝅥 = 60" or "♩. = 54" are read from the page itself (Audiveris leaves them out), including which note counts the beat, so a piece is not played at double or half speed. A tempo word without a number ("Andante", "Slowly", "Allegro") gives a usual tempo for that word, and with no marking at all the time signature decides (90 quarter notes a minute, 72 half notes in 2/2 or 4/2, 60 dotted quarters in 6/8). The tempo can always be changed under Play. The tests in [tools/bench](tools/bench) measure all of this on 20 public-domain scores.
+
 ## Other ways to open music
 
 A score2audio score file (`.s2a`), exported from score2audio on this or another computer, opens straight away, with the line names, volumes and tempo it was exported with. The format is described in [docs/s2a-format.md](docs/s2a-format.md).
@@ -106,7 +131,7 @@ If you already have a score as MusicXML (a `.mxl`, `.musicxml` or `.xml` file, f
 
 The Android app is in the `android` folder; build it with Gradle 8.10 or Android Studio (`gradle assembleRelease`). A build on your own computer is signed with Android's debug key. Published builds are signed on GitHub with the project's private key, which is kept in two repository secrets and never in the repository: `SIGNING_STORE_BASE64` (the PKCS12 key store, base64-encoded) and `SIGNING_STORE_PASSWORD` (its password; the key's alias is `score2audio` and its password is the same, unless `SIGNING_KEY_ALIAS` and `SIGNING_KEY_PASSWORD` say otherwise). GitHub refuses to publish a release without them, and checks that the app was signed with the key whose SHA-256 fingerprint is `81d60d76fccc52cbfc9b33f1d17aef664c16d013e1bb45c20a4897565d9bfaac`. Keep a safe copy of the key store and its password: if they are lost, the app can never be updated in place again.
 
-For the desktop program you need Go 1.24 or newer (on Arch Linux: `sudo pacman -S go`; on a Mac with Homebrew: `brew install go`) and, for `make dist`, `curl` and `zip`. The downloads are built with Go 1.27, whose standard library has security fixes that older versions of Go lack; if your Go is older, it fetches Go 1.27 by itself the first time you build.
+For the desktop program you need Go 1.24 or newer (on Arch Linux: `sudo pacman -S go`; on a Mac with Homebrew: `brew install go`) and, for `make dist`, `curl` and `zip`, and NSIS for the Windows installer (`sudo pacman -S nsis` or `sudo apt install nsis`; without it the installer is skipped). The downloads are built with Go 1.27, whose standard library has security fixes that older versions of Go lack; if your Go is older, it fetches Go 1.27 by itself the first time you build.
 
 ```
 make            # build for this computer
@@ -126,7 +151,7 @@ Settings for testing, as environment variables:
 - `SCORE2AUDIO_PORT` – a fixed port instead of a random one.
 - `SCORE2AUDIO_NO_BROWSER` – do not open a browser.
 
-`score2audio --dump file.mxl` prints what the program understood from a MusicXML file.
+`score2audio --dump file.mxl` prints what the program understood from a MusicXML file. `score2audio --read file.pdf folder` reads a PDF with Audiveris exactly as the page does and leaves the results in the folder. `score2audio --setup` installs Audiveris and FFmpeg (add `--yes` to answer yes to every question).
 
 ## Security
 
@@ -134,7 +159,9 @@ score2audio works entirely on your computer and never sends your scores anywhere
 
 Score files (`.s2a`), MusicXML files and PDFs can come from anyone, so score2audio checks everything it reads from them: compressed files may not unpack to more than a set size, and the music in a score file is checked (for example for a tempo of zero, impossibly long notes, or measures that do not exist) before it is stored or played, on the computer and on Android.
 
-Every change to the project is checked automatically: the tests run, `govulncheck` looks for known vulnerabilities in the code and in Go, and the downloads are built with the newest Go 1.27. The English language data for reading lyrics is downloaded from a fixed version and checked against its fingerprint (SHA-256) before it is packaged.
+Every change to the project is checked automatically: the tests run, `govulncheck` looks for known vulnerabilities in the code and in Go, and the downloads are built with the newest Go 1.27. The English language data for reading lyrics is downloaded from a fixed version and checked against its fingerprint (SHA-256) before it is packaged. Audiveris and FFmpeg are downloaded from fixed versions and checked the same way before they are installed.
+
+Updates are signed: each release's list of files is signed with a private key that only the release build has (the `UPDATE_SIGNING_KEY` secret of this repository; its public key is in update.go), and score2audio installs an update only if that signature and every file's SHA-256 are right. A release built without the key can still be downloaded by hand, but is never installed automatically. To make a new key, run `go run ./tools/updatekey new key.txt`, put the printed public key in update.go, and the contents of key.txt in the secret.
 
 To report a security problem, please open an issue on GitHub (or, for anything sensitive, contact the maintainer privately through GitHub).
 
@@ -153,7 +180,7 @@ The video uses the line names: a line you have named under More settings (for ex
 
 The notation is made from the notes score2audio plays, so what is seen matches what is heard; that also means any mistakes in reading the PDF show in the music. Lyrics only go under voices, not instruments.
 
-Videos are made by the web browser. Microsoft Edge and Google Chrome on Windows and Mac make videos with AAC sound, which plays everywhere. Other browsers may make videos with Opus sound, which a few older phones cannot play; if a browser cannot make videos at all, score2audio says so, and on Windows offers to open the page in Microsoft Edge.
+Videos are made by the web browser. Microsoft Edge and Google Chrome on Windows and Mac make videos with AAC sound, which plays everywhere. Other browsers may make videos with Opus sound, which a few older phones cannot play; when FFmpeg is installed, score2audio converts that sound to AAC by itself. If a browser cannot make videos at all, score2audio says so, and on Windows offers to open the page in Microsoft Edge.
 
 ## How it works
 
@@ -166,7 +193,9 @@ Videos are made by the web browser. Microsoft Edge and Google Chrome on Windows 
 
 score2audio is released under the MIT licence; see the LICENSE file.
 
-- [Audiveris](https://github.com/Audiveris/audiveris), the open source music recognition program (AGPL licence), installed separately.
+- [Audiveris](https://github.com/Audiveris/audiveris), the open source music recognition program (AGPL licence), installed separately (the installer and setup download it from its releases page).
+- [FFmpeg](https://ffmpeg.org/), optional, for MP3 files and video sound (LGPL/GPL licences), installed separately; on Windows the "essentials" build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) is downloaded, with its licence.
+- [NSIS](https://nsis.sourceforge.io/), which builds the Windows installer (zlib licence).
 - [Tesseract](https://github.com/tesseract-ocr/tessdata) English language data, used by Audiveris to read lyrics and labels (Apache 2.0 licence), included in the downloads.
 - [Verovio](https://www.verovio.org/), which engraves the music in videos (LGPL licence, version 3 or later). It is included unmodified in the downloads as its own file, in the `verovio` folder next to the program, with its licence; you can replace that file with another build of Verovio. See third_party/verovio/README.md.
 - [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) by Vanilagy, which writes the MP4 file (MIT licence; web/vendor/mp4-muxer.LICENSE.txt).

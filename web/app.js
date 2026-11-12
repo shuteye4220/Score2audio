@@ -33,6 +33,19 @@
     return ct.includes('json') ? r.json() : r.text();
   }
 
+  // Sends a file to be converted and returns the result as a file.
+  async function apiConvert(to, blob) {
+    let r;
+    try {
+      r = await fetch(`/api/convert?to=${encodeURIComponent(to)}`, { method: 'POST', headers: { 'X-Token': TOKEN || '' }, body: blob });
+    } catch (e) {
+      throw new Error('score2audio is not running. Start score2audio again, then reload this page.');
+    }
+    if (!r.ok) throw new Error((await r.text()).trim() || r.statusText);
+    return r.blob();
+  }
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
   // ---------- messages ----------
   let statusTimer, annTimer;
   function setStatus(msg) {
@@ -484,7 +497,13 @@
         verse: M.verses[opts.verse] || null,
         renderAudio: (rate, lead, tail) => renderMix(plan, chosen, rate, lead, tail),
       };
-      const { blob, audioCodec } = await VideoMaker.make(job, progress, () => videoCancelled);
+      let { blob, audioCodec } = await VideoMaker.make(job, progress, () => videoCancelled);
+      let convertNote = '';
+      if (audioCodec !== 'aac' && hasFFmpeg) {
+        setStatus('Giving the video sound that plays everywhere, with FFmpeg.');
+        $('video-text').textContent = 'Converting the sound with FFmpeg.';
+        try { blob = await apiConvert('video-aac', blob); audioCodec = 'aac'; } catch (e) { convertNote = ' FFmpeg could not convert its sound: ' + e.message; }
+      }
       const what = chosen.length === 1 ? names[0] : `${chosen.length} lines`;
       const name = `${score.meta.title} - ${what} - m${M.measures[range.from].n}-${M.measures[range.to].n} - ${opts.tempo}bpm.mp4`
         .replace(/[\\/:*?"<>|()]+/g, '').replace(/\s+/g, ' ');
@@ -493,7 +512,7 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 60000);
       const mb = (blob.size / 1048576).toFixed(1);
       setStatus(`Your browser has saved the video "${name}" (${mb} MB), usually in your Downloads folder.` +
-        (audioCodec === 'aac' ? '' : ' This browser could not make AAC sound, so the video uses Opus sound, which a few older phones cannot play. Microsoft Edge or Google Chrome on Windows make videos that play everywhere.'));
+        (audioCodec === 'aac' ? '' : ' This browser could not make AAC sound, so the video uses Opus sound, which a few older phones cannot play. Microsoft Edge or Google Chrome on Windows make videos that play everywhere, and so does any browser once FFmpeg is installed (see Setup).' + convertNote));
     } catch (e) {
       if (e instanceof VideoMaker.Cancelled) setStatus('The video was cancelled.');
       else {
@@ -518,11 +537,16 @@
     btn.disabled = true;
     setStatus('Making the audio file. This can take a little while for a long piece.');
     try {
-      const buf = await renderMix(plan, chosen, 32000, 0.2, 1.3);
-      const blob = Synth.toWav(buf);
+      const mp3 = hasFFmpeg && $('audio-format').value === 'mp3';
+      const buf = await renderMix(plan, chosen, mp3 ? 44100 : 32000, 0.2, 1.3);
+      let blob = Synth.toWav(buf);
+      if (mp3) {
+        setStatus('Making the MP3 file with FFmpeg.');
+        blob = await apiConvert('mp3', blob);
+      }
       const r = plan.range;
       const what = chosen.length === 1 ? lineName(chosen[0]) : `${chosen.length} lines`;
-      const name = `${score.meta.title} - ${what} - m${M.measures[r.from].n}-${M.measures[r.to].n} - ${opts.tempo}bpm.wav`
+      const name = `${score.meta.title} - ${what} - m${M.measures[r.from].n}-${M.measures[r.to].n} - ${opts.tempo}bpm.${mp3 ? 'mp3' : 'wav'}`
         .replace(/[\\/:*?"<>|()]+/g, '').replace(/\s+/g, ' ');
       const a = el('a', { href: URL.createObjectURL(blob), download: name });
       document.body.append(a); a.click(); a.remove();
@@ -971,6 +995,77 @@
     } catch (e) { setError(e.message); }
   }
 
+  let hasFFmpeg = false;
+  let updateAnnounced = false;
+
+  async function installHelpers() {
+    setError('');
+    $('btn-helpers').disabled = true;
+    $('helpers-progress').hidden = false;
+    const log = $('helpers-log');
+    log.textContent = '';
+    try { await api('/api/setup', { method: 'POST' }); } catch (e) { setError(e.message); $('btn-helpers').disabled = false; return; }
+    setStatus('Installing the helper programs. This can take several minutes; each step is reported here.');
+    let shown = 0;
+    for (;;) {
+      await sleep(1500);
+      let st;
+      try { st = await api('/api/setup'); } catch (e) { setError(e.message); break; }
+      for (; shown < st.lines.length; shown++) log.append(el('li', { text: st.lines[shown] }));
+      if (st.lines.length) $('helpers-now').textContent = st.lines[st.lines.length - 1];
+      if (st.done) {
+        await refreshEngine();
+        if (!st.ok) setError('Audiveris could not be installed. The steps under Setup say why; you can also install it yourself as described there.');
+        break;
+      }
+    }
+    $('btn-helpers').disabled = false;
+  }
+
+  function updateText(u) {
+    if (u.working) return u.working + '.';
+    if (u.available && u.ready && u.mode === 'auto') return `score2audio ${u.available} has been downloaded and checked. It is installed the next time score2audio starts, or now with Update now.`;
+    if (u.available && u.canApply) return `A new version, score2audio ${u.available}, is available.`;
+    if (u.available) return `A new version, score2audio ${u.available}, is available. ${u.why || ''}`;
+    if (u.error) return u.error;
+    if (u.mode === 'off') return 'score2audio does not check for new versions.';
+    if (u.checked) return `score2audio is up to date (checked ${u.checked}).`;
+    return 'score2audio checks for a new version once a day.';
+  }
+  function renderUpdate(u) {
+    if (!u) return;
+    $('update-mode').value = u.mode || 'auto';
+    $('update-status').textContent = updateText(u);
+    $('update-actions').hidden = !u.available;
+    $('btn-update-now').hidden = !u.canApply;
+    if (u.notesUrl) $('update-notes').href = u.notesUrl;
+  }
+  async function checkUpdateNow() {
+    setError('');
+    const btn = $('btn-update-check');
+    btn.disabled = true;
+    setStatus('Checking for a new version.');
+    try {
+      const u = await api('/api/update/check', { method: 'POST' });
+      renderUpdate(u);
+      setStatus(updateText(u));
+    } catch (e) { setError(e.message); }
+    btn.disabled = false;
+  }
+  async function updateNow() {
+    setError('');
+    $('btn-update-now').disabled = true;
+    setStatus('Downloading the new version and checking it. This can take a minute or two.');
+    try {
+      const r = await api('/api/update/install', { method: 'POST' });
+      document.querySelector('main').hidden = true;
+      setStatus(`score2audio is restarting as version ${r.version}. It opens a new page by itself; you can close this one.`);
+    } catch (e) {
+      setError(e.message);
+      $('btn-update-now').disabled = false;
+    }
+  }
+
   async function refreshEngine() {
     try {
       const s = await api('/api/status');
@@ -990,6 +1085,16 @@
       $('ocr-status').textContent = s.tessdata
         ? 'Lyrics reading is available.'
         : 'Lyrics reading data was not found, so lyrics will not be read from PDFs. Keep the tessdata folder next to the score2audio program.';
+      hasFFmpeg = !!s.ffmpeg;
+      $('ffmpeg-status').textContent = s.ffmpeg
+        ? 'FFmpeg is installed: audio can also be saved as MP3, and videos get sound that plays everywhere from any browser.'
+        : 'FFmpeg is not installed. It is optional: with it, audio can also be saved as MP3, and videos get sound that plays everywhere from any browser.';
+      $('audio-format-wrap').hidden = !s.ffmpeg;
+      $('helpers').hidden = !!(s.audiveris && s.ffmpeg) && $('helpers-progress').hidden;
+      const linux = !['windows', 'darwin'].includes(s.os);
+      $('btn-helpers').hidden = linux; $('helpers-help').hidden = linux; $('helpers-linux').hidden = !linux;
+      renderUpdate(s.update);
+      if (s.updatedTo && !updateAnnounced) { updateAnnounced = true; setStatus(`score2audio was updated to version ${s.updatedTo}.`); }
       return s;
     } catch (e) { setError(e.message); return null; }
   }
@@ -1129,6 +1234,19 @@
       setStatus(s && s.audiveris ? 'Location saved. Audiveris is ready.' : 'Location saved.');
     } catch (e) { setError(e.message); $('engine-path').focus(); }
   });
+  $('btn-helpers').addEventListener('click', installHelpers);
+  $('btn-update-check').addEventListener('click', checkUpdateNow);
+  $('btn-update-now').addEventListener('click', updateNow);
+  $('update-mode').addEventListener('change', async () => {
+    setError('');
+    try {
+      const u = await api('/api/update/mode', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: $('update-mode').value }) });
+      renderUpdate(u);
+      setStatus({ auto: 'New versions will be installed automatically.', ask: 'score2audio will tell you about new versions and install them when you choose.', off: 'score2audio will not check for new versions.' }[u.mode]);
+    } catch (e) { setError(e.message); }
+  });
+  try { const f = localStorage.getItem('score2audio-audio-format'); if (f) $('audio-format').value = f; } catch (e) { /* storage unavailable */ }
+  $('audio-format').addEventListener('change', () => { try { localStorage.setItem('score2audio-audio-format', $('audio-format').value); } catch (e) { /* storage unavailable */ } });
   $('btn-recheck').addEventListener('click', async () => {
     const s = await refreshEngine();
     if (s) setStatus(s.audiveris ? 'Audiveris was found. PDF scores can be read.' : 'Audiveris was still not found.');

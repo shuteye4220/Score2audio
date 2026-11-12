@@ -300,3 +300,23 @@ func TestReadOMRTempos(t *testing.T) {
 		t.Fatalf("missing file: %+v", got)
 	}
 }
+
+func TestFindMetronomeMarksOnNoise(t *testing.T) {
+	// specks, lines and blotches must not crash it or invent marks
+	img := image.NewGray(image.Rect(0, 0, 600, 200))
+	seed := uint32(7)
+	for i := range img.Pix {
+		seed = seed*1664525 + 1013904223
+		if seed>>24 < 40 {
+			img.Pix[i] = 0
+		} else {
+			img.Pix[i] = 255
+		}
+	}
+	if got := findMetronomeMarks(img, -50, -50, 700, 300, testIL, nil, nil); len(got) > 1 {
+		t.Fatalf("marks found in noise: %+v", got)
+	}
+	if got := findMetronomeMarks(img, 500, 500, 600, 600, testIL, nil, nil); got != nil {
+		t.Fatalf("outside the page: %+v", got)
+	}
+}
